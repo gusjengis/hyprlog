@@ -1,12 +1,16 @@
-use crate::Settings;
 use crate::log_parsing::{compute_durations, timeline};
 use crate::log_reader::LogReader;
-use colored::{Color, Colorize};
+use crate::Settings;
+// use colored::{Color, Colorize};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::Paragraph;
 use std::collections::HashMap;
 use std::fmt::Write;
 use terminal_size::Width;
 
-pub fn render_log(settings: &Settings) {
+pub fn render_log(settings: &Settings) -> Option<Text> {
+    let mut res = String::from("");
     let mut reader = LogReader::new(settings);
     if !reader.is_empty() {
         match compute_durations(&mut reader, settings) {
@@ -17,14 +21,15 @@ pub fn render_log(settings: &Settings) {
                     } else {
                         println!("Class \"{}\" not found in log.", &settings.class_arg);
                     }
-                    return;
+                    return None;
                 }
 
                 let colors = key_to_color_map(&durations);
                 let labels: Vec<String> = durations.iter().map(|(s, _)| s.clone()).collect();
-                print_header(settings);
-                render_timelines(&mut reader, &colors, labels, settings);
-                print_table(durations, total, &colors);
+                // header(settings);
+                return Some(render_timelines(&mut reader, &colors, labels, settings));
+                // render_timelines(&mut reader, &colors, labels, settings);
+                // print_table(durations, total, &colors);
             }
             Err(e) => {
                 eprintln!("Failed to compute durations: {e:?}");
@@ -36,9 +41,11 @@ pub fn render_log(settings: &Settings) {
             settings.interval
         );
     }
+    return None;
 }
 
-fn print_header(settings: &Settings) {
+pub fn header(settings: &Settings) -> String {
+    let mut res = String::from("");
     let date_str = settings.interval.date_str();
     let term_width = terminal_width();
 
@@ -46,17 +53,19 @@ fn print_header(settings: &Settings) {
     let box_width = inner_width + 2;
 
     if box_width > term_width {
-        println!("{}", date_str);
-        return;
+        res.push_str(&date_str);
+        return res;
     }
 
     let start_column = (term_width - box_width) / 2;
     let pad = " ".repeat(start_column);
 
-    println!("{}╭{}╮", pad, "─".repeat(inner_width));
-    println!("{}│ {} │", pad, date_str);
-    println!("{}╰{}╯", pad, "─".repeat(inner_width));
-    println!("\n");
+    res.push_str(&format!("{}╭{}╮\n", pad, "─".repeat(inner_width)));
+    res.push_str(&format!("{}│ {} │\n", pad, date_str));
+    res.push_str(&format!("{}╰{}╯\n", pad, "─".repeat(inner_width)));
+    res.push_str(&format!("\n"));
+
+    return res;
 }
 
 const STRIKE_ON: &str = "\x1b[9m";
@@ -69,9 +78,10 @@ pub fn render_timelines(
     colors: &HashMap<String, Color>,
     labels: Vec<String>,
     settings: &Settings,
-) {
+) -> Text<'static> {
+    let mut lines = Vec::new();
     if !settings.multi_timeline {
-        render_timeline(reader, colors, settings, None);
+        lines.push(build_timeline(reader, colors, settings, None));
     } else {
         let mut count = 0;
         for label in labels {
@@ -81,43 +91,55 @@ pub fn render_timelines(
             if count >= CUTOFF {
                 break;
             }
-            render_timeline(reader, colors, settings, Some(&label));
+            lines.push(build_timeline(reader, colors, settings, Some(&label)));
             count += 1;
         }
     }
+    return Text::from(lines);
 }
 
-pub fn render_timeline(
+fn build_timeline(
     reader: &mut LogReader,
     colors: &HashMap<String, Color>,
     settings: &Settings,
     label: Option<&String>,
-) {
+) -> Line<'static> {
     let width = terminal_width();
-    let sections = timeline(reader, width, &settings, label);
-    let mut timeline_string = String::from("");
+    let sections = timeline(reader, width, settings, label);
+
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(sections.len());
 
     for section_data in sections {
-        let key = match settings.multi_timeline {
-            false => &section_data.0,
-            true => label.unwrap(),
+        let key = if settings.multi_timeline {
+            label.expect("label required when multi_timeline")
+        } else {
+            &section_data.0
         };
+
         if let Some(color) = colors.get(key) {
-            let ch = choose_character(section_data, settings).to_string();
-            let glyph = if *color == Color::Black {
+            let (s, style) = if *color == Color::Black {
                 if FANCY_TIMELINE {
-                    " ".strikethrough().bold().white().to_string()
+                    (
+                        " ".to_string(),
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD | Modifier::CROSSED_OUT),
+                    )
                 } else {
-                    "—".white().to_string()
+                    ("—".to_string(), Style::default().fg(Color::White))
                 }
             } else {
-                format!("{}", ch.color(*color))
+                (
+                    choose_character(section_data, settings).to_string(),
+                    Style::default().fg(*color),
+                )
             };
 
-            write!(&mut timeline_string, "{}{}{}", STRIKE_ON, glyph, STRIKE_OFF).unwrap();
+            spans.push(Span::styled(s, style)); // <-- owns the String
         }
     }
-    println!("{timeline_string}\n");
+
+    Line::from(spans)
 }
 
 fn choose_character(section_data: (String, i64, i64, bool, bool), settings: &Settings) -> char {
@@ -171,52 +193,52 @@ fn choose_character(section_data: (String, i64, i64, bool, bool), settings: &Set
     }
 }
 
-fn print_table(rows: Vec<(String, u64)>, total: u64, colors: &HashMap<String, Color>) {
-    let mut max_class_width = rows.iter().map(|(class, _)| class.len()).max().unwrap_or(0);
+// fn print_table(rows: Vec<(String, u64)>, total: u64, colors: &HashMap<String, Color>) {
+//     let mut max_class_width = rows.iter().map(|(class, _)| class.len()).max().unwrap_or(0);
 
-    let max_string_length = terminal_width() - 20;
-    max_class_width = max_class_width.min(max_string_length);
+//     let max_string_length = terminal_width() - 20;
+//     max_class_width = max_class_width.min(max_string_length);
 
-    let total_width = max_class_width + 10 + 8 + 2; // +2 for the spaces between columns
-    let left_padding = (terminal_width() - total_width) / 2;
+//     let total_width = max_class_width + 10 + 8 + 2; // +2 for the spaces between columns
+//     let left_padding = (terminal_width() - total_width) / 2;
 
-    println!("");
+//     println!("");
 
-    let mut total_percentage = 0.0;
-    let mut total_duration = 0;
-    let mut count = 0;
-    for (class, duration) in rows {
-        if count >= CUTOFF {
-            break;
-        }
-        total_duration += duration;
-        let percent = 100.0 * (duration as f64 / total as f64);
-        total_percentage += percent;
-        let color = colors.get(&class).unwrap();
-        println!(
-            "{}{:<width$} {:>10} {:>7.2}%",
-            " ".repeat(left_padding),
-            truncate_string(&class, max_string_length).color(*color),
-            format_duration(duration),
-            percent,
-            width = max_class_width
-        );
-        count += 1;
-    }
+//     let mut total_percentage = 0.0;
+//     let mut total_duration = 0;
+//     let mut count = 0;
+//     for (class, duration) in rows {
+//         if count >= CUTOFF {
+//             break;
+//         }
+//         total_duration += duration;
+//         let percent = 100.0 * (duration as f64 / total as f64);
+//         total_percentage += percent;
+//         let color = colors.get(&class).unwrap();
+//         println!(
+//             "{}{:<width$} {:>10} {:>7.2}%",
+//             " ".repeat(left_padding),
+//             truncate_string(&class, max_string_length).color(*color),
+//             format_duration(duration),
+//             percent,
+//             width = max_class_width
+//         );
+//         count += 1;
+//     }
 
-    println!(
-        "{}",
-        format!(
-            "\n{}{:<width$} {:>10} {:>7.2}%",
-            " ".repeat(left_padding),
-            truncate_string(&"Total", max_string_length),
-            format_duration(total_duration),
-            total_percentage,
-            width = max_class_width
-        )
-        .bold()
-    );
-}
+//     println!(
+//         "{}",
+//         format!(
+//             "\n{}{:<width$} {:>10} {:>7.2}%",
+//             " ".repeat(left_padding),
+//             truncate_string(&"Total", max_string_length),
+//             format_duration(total_duration),
+//             total_percentage,
+//             width = max_class_width
+//         )
+//         .bold()
+//     );
+// }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
@@ -281,12 +303,12 @@ pub fn color_from_index(index: usize) -> Color {
         3 => Color::Magenta,
         4 => Color::Yellow,
         5 => Color::Cyan,
-        6 => Color::BrightRed,
-        7 => Color::BrightGreen,
-        8 => Color::BrightBlue,
-        9 => Color::BrightMagenta,
-        10 => Color::BrightYellow,
-        11 => Color::BrightCyan,
+        6 => Color::LightRed,
+        7 => Color::LightGreen,
+        8 => Color::LightBlue,
+        9 => Color::LightMagenta,
+        10 => Color::LightYellow,
+        11 => Color::LightCyan,
         _ => Color::White,
     };
 }

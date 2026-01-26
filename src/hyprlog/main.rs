@@ -3,13 +3,14 @@ mod daemon_commands;
 mod interval;
 mod log_parsing;
 mod log_reader;
+mod tui;
 mod view;
 
 use daemon_commands::send_command;
 use std::env;
 use view::render_log;
 
-use crate::{config::Config, interval::Interval};
+use crate::{config::Config, interval::Interval, tui::start_tui};
 
 fn main() {
     // use chrono::Utc;
@@ -22,7 +23,8 @@ fn main() {
             print_usage();
         }
         None => {
-            view::render_log(&Settings::new());
+            // view::render_log(&Settings::new());
+            start_tui(Settings::new()).unwrap();
         }
         _ => {
             let mut settings = Settings::new();
@@ -80,7 +82,8 @@ fn main() {
                 return;
             }
 
-            render_log(&settings);
+            // render_log(&settings);
+            start_tui(settings).unwrap();
         }
     }
 
