@@ -104,11 +104,10 @@ fn print_usage() {
 }
 
 pub struct Settings {
-    //<Tz> {
     pub full: bool,
     pub multi_timeline: bool,
     pub class_arg: String,
-    pub interval: Interval, //<Tz>,
+    pub interval: Interval,
     pub config: Config,
 }
 

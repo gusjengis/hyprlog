@@ -2,14 +2,15 @@ use crate::log_parsing::{compute_durations, timeline};
 use crate::log_reader::LogReader;
 use crate::Settings;
 // use colored::{Color, Colorize};
+use ratatui::layout::Constraint;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 use std::collections::HashMap;
 use std::fmt::Write;
 use terminal_size::Width;
 
-pub fn render_log(settings: &Settings) -> Option<Text> {
+pub fn render_log(settings: &Settings) -> Option<(Text<'static>, Table<'static>, Table<'static>)> {
     let mut res = String::from("");
     let mut reader = LogReader::new(settings);
     if !reader.is_empty() {
@@ -27,9 +28,12 @@ pub fn render_log(settings: &Settings) -> Option<Text> {
                 let colors = key_to_color_map(&durations);
                 let labels: Vec<String> = durations.iter().map(|(s, _)| s.clone()).collect();
                 // header(settings);
-                return Some(render_timelines(&mut reader, &colors, labels, settings));
-                // render_timelines(&mut reader, &colors, labels, settings);
-                // print_table(durations, total, &colors);
+
+                let timelines = render_timelines(&mut reader, &colors, labels, settings);
+                let class_table = build_class_table(&durations, total, &colors);
+                let title_table = build_title_table(&durations, total, &colors);
+
+                return Some((timelines, class_table, title_table));
             }
             Err(e) => {
                 eprintln!("Failed to compute durations: {e:?}");
@@ -57,19 +61,26 @@ pub fn header(settings: &Settings) -> String {
         return res;
     }
 
-    let start_column = (term_width - box_width) / 2;
+    let start_column = ((term_width - box_width) as f32 / 2.0).round() as usize;
+    let start_column_int_div = (term_width - box_width) / 2;
+    let rounded_up = start_column == start_column_int_div;
     let pad = " ".repeat(start_column);
+    let top_border_left = "─".repeat(start_column - 1);
+    let top_border_right = "─".repeat(start_column - (1 + if rounded_up { 0 } else { 1 }));
 
     res.push_str(&format!("{}╭{}╮\n", pad, "─".repeat(inner_width)));
     res.push_str(&format!("{}│ {} │\n", pad, date_str));
-    res.push_str(&format!("{}╰{}╯\n", pad, "─".repeat(inner_width)));
+    res.push_str(&format!(
+        "┌{}┴{}┴{}┐\n",
+        top_border_left,
+        "─".repeat(inner_width),
+        top_border_right
+    ));
     res.push_str(&format!("\n"));
 
     return res;
 }
 
-const STRIKE_ON: &str = "\x1b[9m";
-const STRIKE_OFF: &str = "\x1b[29m";
 const FANCY_TIMELINE: bool = true;
 const CUTOFF: usize = usize::MAX; // not doing anything but the setting is here
 
@@ -80,8 +91,10 @@ pub fn render_timelines(
     settings: &Settings,
 ) -> Text<'static> {
     let mut lines = Vec::new();
+    lines.push(Line::from(""));
     if !settings.multi_timeline {
         lines.push(build_timeline(reader, colors, settings, None));
+        lines.push(Line::from("\n"));
     } else {
         let mut count = 0;
         for label in labels {
@@ -92,6 +105,7 @@ pub fn render_timelines(
                 break;
             }
             lines.push(build_timeline(reader, colors, settings, Some(&label)));
+            lines.push(Line::from("\n"));
             count += 1;
         }
     }
@@ -117,6 +131,17 @@ fn build_timeline(
         };
 
         if let Some(color) = colors.get(key) {
+            // Old behavior was effectively:
+            //   STRIKE_ON + (colored glyph) + STRIKE_OFF
+            //
+            // In Ratatui, "strike + color" must be part of the SAME style on the Span.
+            // To match your old look, when FANCY_TIMELINE is enabled we apply CROSSED_OUT
+            // broadly (so the decoration stays colored with the fg).
+            let mut base_style = Style::default().fg(*color);
+            if FANCY_TIMELINE {
+                base_style = base_style.add_modifier(Modifier::CROSSED_OUT);
+            }
+
             let (s, style) = if *color == Color::Black {
                 if FANCY_TIMELINE {
                     (
@@ -131,7 +156,7 @@ fn build_timeline(
             } else {
                 (
                     choose_character(section_data, settings).to_string(),
-                    Style::default().fg(*color),
+                    base_style,
                 )
             };
 
@@ -193,52 +218,147 @@ fn choose_character(section_data: (String, i64, i64, bool, bool), settings: &Set
     }
 }
 
-// fn print_table(rows: Vec<(String, u64)>, total: u64, colors: &HashMap<String, Color>) {
-//     let mut max_class_width = rows.iter().map(|(class, _)| class.len()).max().unwrap_or(0);
+fn build_class_table(
+    rows: &Vec<(String, u64)>,
+    total: u64,
+    colors: &HashMap<String, Color>,
+) -> Table<'static> {
+    let mut max_class_width = rows.iter().map(|(class, _)| class.len()).max().unwrap_or(0);
 
-//     let max_string_length = terminal_width() - 20;
-//     max_class_width = max_class_width.min(max_string_length);
+    // Keep your original logic: cap by terminal width so it doesn't explode.
+    let max_string_length = terminal_width().saturating_sub(20);
+    max_class_width = max_class_width.min(max_string_length);
 
-//     let total_width = max_class_width + 10 + 8 + 2; // +2 for the spaces between columns
-//     let left_padding = (terminal_width() - total_width) / 2;
+    // Build row widgets
+    let mut table_rows: Vec<Row<'static>> = Vec::new();
 
-//     println!("");
+    let mut total_percentage = 0.0;
+    let mut total_duration: u64 = 0;
+    let mut count = 0;
 
-//     let mut total_percentage = 0.0;
-//     let mut total_duration = 0;
-//     let mut count = 0;
-//     for (class, duration) in rows {
-//         if count >= CUTOFF {
-//             break;
-//         }
-//         total_duration += duration;
-//         let percent = 100.0 * (duration as f64 / total as f64);
-//         total_percentage += percent;
-//         let color = colors.get(&class).unwrap();
-//         println!(
-//             "{}{:<width$} {:>10} {:>7.2}%",
-//             " ".repeat(left_padding),
-//             truncate_string(&class, max_string_length).color(*color),
-//             format_duration(duration),
-//             percent,
-//             width = max_class_width
-//         );
-//         count += 1;
-//     }
+    for (class, duration) in rows.iter() {
+        if count >= CUTOFF {
+            break;
+        }
+        total_duration += *duration;
+        let percent = if total == 0 {
+            0.0
+        } else {
+            100.0 * (*duration as f64 / total as f64)
+        };
+        total_percentage += percent;
 
-//     println!(
-//         "{}",
-//         format!(
-//             "\n{}{:<width$} {:>10} {:>7.2}%",
-//             " ".repeat(left_padding),
-//             truncate_string(&"Total", max_string_length),
-//             format_duration(total_duration),
-//             total_percentage,
-//             width = max_class_width
-//         )
-//         .bold()
-//     );
-// }
+        let color = *colors.get(class).unwrap_or(&Color::White);
+
+        let class_cell =
+            Cell::from(truncate_string(class, max_string_length)).style(Style::default().fg(color));
+
+        let dur_cell = Cell::from(format_duration(*duration));
+        let pct_cell = Cell::from(format!("{:>7.2}%", percent));
+
+        table_rows.push(Row::new(vec![class_cell, dur_cell, pct_cell]));
+        count += 1;
+    }
+
+    // Add "Total" row (bold)
+    table_rows.push(
+        Row::new(vec![
+            Cell::from(truncate_string("Total", max_string_length))
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from(format_duration(total_duration))
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from(format!("{:>7.2}%", total_percentage))
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        ])
+        .top_margin(1),
+    );
+
+    // Column constraints (use terminal-ish sizing similar to your printf widths)
+    let widths = [
+        Constraint::Length(max_class_width as u16),
+        Constraint::Length(10),
+        Constraint::Length(9),
+    ];
+
+    Table::new(table_rows, widths)
+        .header(
+            Row::new(vec!["Class", "Duration", "Percent"])
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        )
+        .block(Block::default().borders(Borders::BOTTOM | Borders::LEFT))
+        .column_spacing(1)
+}
+
+fn build_title_table(
+    rows: &Vec<(String, u64)>,
+    total: u64,
+    colors: &HashMap<String, Color>,
+) -> Table<'static> {
+    let mut max_class_width = rows.iter().map(|(class, _)| class.len()).max().unwrap_or(0);
+
+    // Keep your original logic: cap by terminal width so it doesn't explode.
+    let max_string_length = terminal_width().saturating_sub(20);
+    max_class_width = max_class_width.min(max_string_length);
+
+    // Build row widgets
+    let mut table_rows: Vec<Row<'static>> = Vec::new();
+
+    let mut total_percentage = 0.0;
+    let mut total_duration: u64 = 0;
+    let mut count = 0;
+
+    for (class, duration) in rows.iter() {
+        if count >= CUTOFF {
+            break;
+        }
+        total_duration += *duration;
+        let percent = if total == 0 {
+            0.0
+        } else {
+            100.0 * (*duration as f64 / total as f64)
+        };
+        total_percentage += percent;
+
+        let color = *colors.get(class).unwrap_or(&Color::White);
+
+        let class_cell =
+            Cell::from(truncate_string(class, max_string_length)).style(Style::default().fg(color));
+
+        let dur_cell = Cell::from(format_duration(*duration));
+        let pct_cell = Cell::from(format!("{:>7.2}%", percent));
+
+        table_rows.push(Row::new(vec![class_cell, dur_cell, pct_cell]));
+        count += 1;
+    }
+
+    // Add "Total" row (bold)
+    table_rows.push(
+        Row::new(vec![
+            Cell::from(truncate_string("Total", max_string_length))
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from(format_duration(total_duration))
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+            Cell::from(format!("{:>7.2}%", total_percentage))
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        ])
+        .top_margin(1),
+    );
+
+    // Column constraints (use terminal-ish sizing similar to your printf widths)
+    let widths = [
+        Constraint::Length(max_class_width as u16),
+        Constraint::Length(10),
+        Constraint::Length(9),
+    ];
+
+    Table::new(table_rows, widths)
+        .header(
+            Row::new(vec!["Class", "Duration", "Percent"])
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        )
+        .block(Block::default().borders(Borders::BOTTOM | Borders::RIGHT))
+        .column_spacing(1)
+}
 
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
