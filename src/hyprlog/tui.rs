@@ -109,10 +109,14 @@ fn update(app: &mut App) {
                 .unwrap(),
         ));
     }
+
+    if let Some((class, _)) = &app.selected_class {
+        app.settings.class_arg = class.clone();
+    }
 }
 
 fn render(frame: &mut Frame, app: &mut App) {
-    let Some(timelines_text) = render_log(&app.settings) else {
+    let Some(timelines_text) = render_log(&app.model, &app.settings) else {
         let msg = Paragraph::new("No log data for this interval. (press 'q' to quit)");
         frame.render_widget(msg, frame.area());
         return;

@@ -11,8 +11,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use terminal_size::Width;
 
-pub fn render_log(settings: &Settings) -> Option<Text<'static>> {
-    let mut res = String::from("");
+pub fn render_log(model: &Model, settings: &Settings) -> Option<Text<'static>> {
     let mut reader = LogReader::new(settings);
     if !reader.is_empty() {
         match compute_durations(&mut reader, settings) {
@@ -26,11 +25,12 @@ pub fn render_log(settings: &Settings) -> Option<Text<'static>> {
                     return None;
                 }
 
+                // println!("{}", durations);
                 let colors = key_to_color_map(&durations);
                 let labels: Vec<String> = durations.iter().map(|(s, _)| s.clone()).collect();
                 // header(settings);
 
-                let timelines = render_timelines(&mut reader, &colors, labels, settings);
+                let timelines = render_timelines(model, &colors, labels, settings);
 
                 return Some(timelines);
             }
@@ -84,7 +84,7 @@ const FANCY_TIMELINE: bool = true;
 const CUTOFF: usize = usize::MAX; // not doing anything but the setting is here
 
 pub fn render_timelines(
-    reader: &mut LogReader,
+    model: &Model,
     colors: &HashMap<String, Color>,
     labels: Vec<String>,
     settings: &Settings,
@@ -92,7 +92,7 @@ pub fn render_timelines(
     let mut lines = Vec::new();
     lines.push(Line::from(""));
     if !settings.multi_timeline {
-        lines.push(build_timeline(reader, colors, settings, None));
+        lines.push(build_timeline(model, colors, settings, None));
         lines.push(Line::from("\n"));
     } else {
         let mut count = 0;
@@ -103,7 +103,7 @@ pub fn render_timelines(
             if count >= CUTOFF {
                 break;
             }
-            lines.push(build_timeline(reader, colors, settings, Some(&label)));
+            lines.push(build_timeline(model, colors, settings, Some(&label)));
             lines.push(Line::from("\n"));
             count += 1;
         }
@@ -112,13 +112,13 @@ pub fn render_timelines(
 }
 
 fn build_timeline(
-    reader: &mut LogReader,
+    model: &Model,
     colors: &HashMap<String, Color>,
     settings: &Settings,
     label: Option<&String>,
 ) -> Line<'static> {
     let width = terminal_width();
-    let sections = timeline(reader, width, settings, label);
+    let sections = timeline(model, width, settings, label);
 
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(sections.len());
 
