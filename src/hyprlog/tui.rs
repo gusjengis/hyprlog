@@ -3,23 +3,36 @@ use std::time::Duration;
 use color_eyre::eyre::Context;
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
-use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Borders, Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
-use crate::view::{header, render_log};
+use crate::log_reader::LogReader;
+use crate::model::Model;
+use crate::model_building::{build_model, update_model};
+use crate::view::{build_class_table, build_title_table, header, render_log};
 use crate::Settings;
 
 pub struct App {
     settings: Settings,
+    model: Model,
     should_quit: bool,
+    selected_class: Option<(String, usize)>,
+    selected_title: Option<(String, usize)>,
+    follow: bool,
 }
 
 impl App {
     pub fn new(settings: Settings) -> Self {
         Self {
             settings,
+            model: Model::new(),
             should_quit: false,
+            selected_class: None,
+            selected_title: None,
+            follow: false,
         }
     }
 }
@@ -27,6 +40,14 @@ impl App {
 pub fn start_tui(settings: Settings) -> Result<()> {
     color_eyre::install()?;
     let mut app = App::new(settings);
+
+    let mut reader = LogReader::new(&app.settings);
+
+    if !reader.is_empty() {
+        build_model(&mut app.model, &mut reader, &app.settings).unwrap();
+    }
+
+    update(&mut app);
     ratatui::run(|terminal| run(terminal, &mut app)).context("failed to run app")
 }
 
@@ -37,20 +58,61 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
         if app.should_quit {
             break;
         }
+        update(app);
     }
     Ok(())
 }
 
-fn render(frame: &mut Frame, app: &App) {
-    let Some((timelines_text, table_left, _)) = render_log(&app.settings) else {
-        let msg = Paragraph::new("No log data for this interval. (press 'q' to quit)");
-        frame.render_widget(msg, frame.area());
-        return;
-    };
+fn update(app: &mut App) {
+    app.model = Model::new();
+    build_model(
+        &mut app.model,
+        &mut LogReader::new(&app.settings),
+        &app.settings,
+    )
+    .unwrap();
 
-    // Build a second table (duplicate for now)
-    let Some((_timelines_text2, _, table_right)) = render_log(&app.settings) else {
-        // If this somehow fails while the first succeeded, just don't draw the second
+    if let Some((class, index)) = app.selected_class.as_mut() {
+        if let Some(class_index) = app.model.index_of(&class) {
+            if class_index != *index {
+                *index = class_index;
+            }
+            if let Some((title, index)) = app.selected_title.as_mut() {
+                if let Some(title_index) = app.model.index_of(&title) {
+                    if title_index != *index {
+                        *index = title_index;
+                    }
+                } else {
+                    let class_struct = &app.model.get_class(class.clone());
+                    if *index >= class_struct.titles.len() {
+                        *index = class_struct.titles.len() - 1;
+                    }
+                    *title = class_struct.titles[*index].title.clone();
+                }
+            }
+        } else {
+            if *index >= app.model.classes.len() {
+                *index = app.model.classes.len() - 1;
+            }
+            *class = app.model.classes[*index].class.clone();
+            app.selected_title = None;
+        }
+    }
+    if app.follow {
+        let newest_log = app.model.logs.last().unwrap();
+        let class_index = app.model.index_of(&newest_log.class).unwrap();
+        app.selected_class = Some((newest_log.class.clone(), class_index));
+        app.selected_title = Some((
+            newest_log.title.clone(),
+            app.model.classes[class_index]
+                .index_of(&newest_log.title)
+                .unwrap(),
+        ));
+    }
+}
+
+fn render(frame: &mut Frame, app: &mut App) {
+    let Some(timelines_text) = render_log(&app.settings) else {
         let msg = Paragraph::new("No log data for this interval. (press 'q' to quit)");
         frame.render_widget(msg, frame.area());
         return;
@@ -71,22 +133,24 @@ fn render(frame: &mut Frame, app: &App) {
         chunks[0],
     );
 
-    // (you said forget header, but leaving your line as-is)
     frame.render_widget(Paragraph::new(header(&app.settings)), chunks[1]);
 
-    // Split the table area into left/right
     let table_cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(2),
+            Constraint::Fill(1),
+        ])
         .split(chunks[2]);
 
-    frame.render_widget(table_left, table_cols[0]);
-    frame.render_widget(table_right, table_cols[1]);
+    let class_table = build_class_table(&app.model, &app.selected_class, table_cols[0].width);
+    let title_table = build_title_table(&app.model, &app.selected_class, &app.selected_title);
+    frame.render_widget(class_table, table_cols[0]);
+    draw_inner_border(frame, table_cols[1], Style::default());
+    frame.render_widget(title_table, table_cols[2]);
 
-    frame.render_widget(
-        Paragraph::new("q: quit  •  m: toggle multi-timeline"),
-        chunks[3],
-    );
+    frame.render_widget(Paragraph::new(footer_line(app)), chunks[3]);
 }
 
 fn event_loop(app: &mut App) -> Result<()> {
@@ -98,10 +162,101 @@ fn event_loop(app: &mut App) -> Result<()> {
                     KeyCode::Char('m') => {
                         app.settings.multi_timeline = !app.settings.multi_timeline
                     }
+                    KeyCode::Char('f') => {
+                        app.follow = !app.follow;
+                        app.selected_title = None;
+                    }
+                    KeyCode::Up => {
+                        if let None = app.selected_class.as_ref() {
+                            app.selected_class = Some((app.model.classes[0].class.clone(), 0));
+                        } else if let Some((class, index)) = app.selected_class.as_mut() {
+                            if let Some((title, index)) = app.selected_title.as_mut() {
+                                if *index > 0 {
+                                    *index = (*index - 1);
+                                    *title = app.model.get_class(class.clone()).titles[*index]
+                                        .title
+                                        .clone();
+                                }
+                            } else if *index > 0 {
+                                *index = (*index - 1);
+                                *class = app.model.classes[*index].class.clone();
+                            }
+                        }
+                    }
+                    KeyCode::Down => {
+                        if let None = app.selected_class.as_ref() {
+                            app.selected_class = Some((app.model.classes[0].class.clone(), 0));
+                        } else if let Some((class, index)) = app.selected_class.as_mut() {
+                            if let Some((title, index)) = app.selected_title.as_mut() {
+                                *index = (*index + 1)
+                                    .min(app.model.get_class(class.clone()).titles.len() - 1);
+                                *title = app.model.get_class(class.clone()).titles[*index]
+                                    .title
+                                    .clone();
+                            } else {
+                                *index = (*index + 1).min(app.model.classes.len() - 1);
+                                *class = app.model.classes[*index].class.clone();
+                            }
+                        }
+                    }
+                    KeyCode::Esc => {
+                        if app.selected_title.is_some() {
+                            app.selected_title = None;
+                        } else if app.selected_class.is_some() {
+                            app.selected_class = None;
+                        }
+                    }
                     _ => {}
                 }
             }
         }
     }
     Ok(())
+}
+
+fn draw_inner_border(frame: &mut Frame, area: Rect, style: Style) {
+    let x0 = area.x;
+    let x1 = area.x + 1;
+
+    let bottom_y = area.y + area.height.saturating_sub(1);
+
+    for y in area.y..bottom_y {
+        frame.buffer_mut().set_string(x0, y, "▕", style);
+        frame.buffer_mut().set_string(x1, y, "▏", style);
+    }
+
+    if area.height > 0 {
+        frame.buffer_mut().set_string(x0, bottom_y, "─", style);
+        frame.buffer_mut().set_string(x1, bottom_y, "─", style);
+    }
+}
+
+fn toggle_span(label: &str, on: bool) -> Span<'static> {
+    let base = Style::default().add_modifier(Modifier::BOLD);
+    let on_style = base.add_modifier(Modifier::REVERSED);
+    Span::styled(format!(" {} ", label), if on { on_style } else { base })
+}
+
+fn key_span(key: &str) -> Span<'static> {
+    Span::styled(
+        format!(" {} ", key),
+        Style::default().add_modifier(Modifier::BOLD),
+    )
+}
+
+fn footer_line(app: &App) -> Line<'static> {
+    Line::from(vec![
+        key_span("q"),
+        Span::raw("quit  •  "),
+        key_span("m"),
+        toggle_span("multi-timeline", app.settings.multi_timeline),
+        Span::raw("  •  "),
+        key_span("f"),
+        toggle_span("follow", app.follow),
+        Span::raw("  •  "),
+        key_span("↑/↓"),
+        Span::raw("move  •  "),
+        key_span("esc"),
+        Span::raw("back"),
+    ])
 }

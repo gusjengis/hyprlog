@@ -3,6 +3,8 @@ mod daemon_commands;
 mod interval;
 mod log_parsing;
 mod log_reader;
+mod model;
+mod model_building;
 mod tui;
 mod view;
 

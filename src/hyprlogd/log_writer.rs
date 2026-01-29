@@ -1,7 +1,7 @@
 use chrono::{Datelike, Utc};
 use directories::BaseDirs;
 use std::{
-    fs::{File, OpenOptions, create_dir_all},
+    fs::{create_dir_all, File, OpenOptions},
     io::{self, Write},
     os::unix::net::UnixDatagram,
     path::PathBuf,
