@@ -1,5 +1,4 @@
-use crate::log_parsing::{compute_durations, timeline};
-use crate::log_reader::LogReader;
+use crate::log_parsing::timeline;
 use crate::model::{Class, Model};
 use crate::Settings;
 use std::time::Duration;
@@ -13,39 +12,23 @@ use std::fmt::Write;
 use terminal_size::Width;
 
 pub fn render_log(model: &Model, settings: &Settings) -> Option<Text<'static>> {
-    let mut reader = LogReader::new(settings);
-    if !reader.is_empty() {
-        match compute_durations(&mut reader, settings) {
-            Ok((durations, total)) => {
-                if durations.is_empty() {
-                    if &settings.class_arg == "" {
-                        println!("Empty log.");
-                    } else {
-                        println!("Class \"{}\" not found in log.", &settings.class_arg);
-                    }
-                    return None;
-                }
+    let durations = get_sorted_durations(model, settings);
 
-                // println!("{}", durations);
-                let colors = key_to_color_map(&durations);
-                let labels: Vec<String> = durations.iter().map(|(s, _)| s.clone()).collect();
-                // header(settings);
-
-                let timelines = render_timelines(model, &colors, labels, settings);
-
-                return Some(timelines);
-            }
-            Err(e) => {
-                eprintln!("Failed to compute durations: {e:?}");
-            }
+    if durations.is_empty() {
+        if &settings.class_arg == "" {
+            println!("Empty log.");
+        } else {
+            println!("Class \"{}\" not found in log.", &settings.class_arg);
         }
-    } else {
-        println!(
-            "Log files not found in the following interval.\n{:?}",
-            settings.interval
-        );
+        return None;
     }
-    return None;
+
+    let colors = key_to_color_map(&durations);
+    let labels: Vec<String> = durations.iter().map(|(s, _)| s.clone()).collect();
+
+    let timelines = render_timelines(model, &colors, labels, settings);
+
+    return Some(timelines);
 }
 
 pub fn header(settings: &Settings) -> String {
@@ -529,4 +512,39 @@ fn key_to_color_map(list: &Vec<(String, u64)>) -> HashMap<String, Color> {
     }
 
     return res;
+}
+
+pub fn get_sorted_durations(model: &Model, settings: &Settings) -> Vec<(String, u64)> {
+    let mut durations: Vec<(String, u64)> = Vec::new();
+
+    if settings.full {
+        for class in &model.classes {
+            for title in &class.titles {
+                let label = format!("{}: {}", class.class, title.title);
+                let duration = title.total_duration(&model.logs);
+                if duration > 0 {
+                    durations.push((label, duration));
+                }
+            }
+        }
+    } else if settings.class_arg == "" {
+        for class in &model.classes {
+            let duration = class.total_duration(&model.logs);
+            if duration > 0 {
+                durations.push((class.class.clone(), duration));
+            }
+        }
+    } else {
+        if let Some(class) = model.classes.iter().find(|c| c.class == settings.class_arg) {
+            for title in &class.titles {
+                let duration = title.total_duration(&model.logs);
+                if duration > 0 {
+                    durations.push((title.title.clone(), duration));
+                }
+            }
+        }
+    }
+
+    durations.sort_by(|a, b| b.1.cmp(&a.1));
+    durations
 }
