@@ -3,7 +3,7 @@ use chrono::TimeDelta;
 use csv::{Reader, StringRecord};
 use directories::BaseDirs;
 use std::{
-    fs::{File, create_dir_all},
+    fs::{create_dir_all, File},
     path::PathBuf,
 };
 

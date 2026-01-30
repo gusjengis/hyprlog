@@ -2,6 +2,7 @@ use crate::log_parsing::{compute_durations, timeline};
 use crate::log_reader::LogReader;
 use crate::model::{Class, Model};
 use crate::Settings;
+use std::time::Duration;
 // use colored::{Color, Colorize};
 use ratatui::layout::Constraint;
 use ratatui::style::{Color, Modifier, Style};
@@ -478,6 +479,16 @@ pub fn format_duration(ms: u64) -> String {
         format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
     } else {
         format!("{:02}:{:02}", minutes, seconds)
+    }
+}
+
+pub fn format_short_duration(duration: Duration) -> String {
+    if duration.as_secs_f64() < 0.001 {
+        format!("{}µs", duration.as_micros())
+    } else if duration.as_secs_f64() < 1.0 {
+        format!("{}ms", duration.as_millis())
+    } else {
+        format!("{}s", duration.as_secs_f64())
     }
 }
 

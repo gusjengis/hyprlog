@@ -3,7 +3,7 @@ use tokio::signal;
 use tokio::task::JoinHandle;
 use zbus::fdo::DBusProxy;
 use zbus::names::BusName;
-use zbus::{Connection, proxy};
+use zbus::{proxy, Connection};
 
 use crate::log_writer::LogMsg;
 

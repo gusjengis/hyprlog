@@ -2,7 +2,7 @@ use std::{fs::remove_file, path::Path};
 
 use tokio::sync::mpsc::Sender;
 
-use crate::log_writer::{LogMsg, log_error};
+use crate::log_writer::{log_error, LogMsg};
 
 use tokio::net::UnixDatagram;
 pub async fn start_socket_listener(sender: Sender<LogMsg>) -> std::io::Result<()> {

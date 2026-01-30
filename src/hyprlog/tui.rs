@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use color_eyre::eyre::Context;
 use color_eyre::Result;
@@ -12,7 +12,9 @@ use ratatui::{DefaultTerminal, Frame};
 use crate::log_reader::LogReader;
 use crate::model::Model;
 use crate::model_building::{build_model, update_model};
-use crate::view::{build_class_table, build_title_table, header, render_log};
+use crate::view::{
+    build_class_table, build_title_table, format_short_duration, header, render_log,
+};
 use crate::Settings;
 
 pub struct App {
@@ -22,6 +24,7 @@ pub struct App {
     selected_class: Option<(String, usize)>,
     selected_title: Option<(String, usize)>,
     follow: bool,
+    last_frame_end: Option<Instant>,
 }
 
 impl App {
@@ -33,6 +36,7 @@ impl App {
             selected_class: None,
             selected_title: None,
             follow: false,
+            last_frame_end: None,
         }
     }
 }
@@ -55,6 +59,7 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     loop {
         terminal.draw(|f| render(f, app))?;
         event_loop(app)?;
+        app.last_frame_end = Some(Instant::now());
         if app.should_quit {
             break;
         }
@@ -64,13 +69,13 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
 }
 
 fn update(app: &mut App) {
-    app.model = Model::new();
-    build_model(
-        &mut app.model,
-        &mut LogReader::new(&app.settings),
-        &app.settings,
-    )
-    .unwrap();
+    // app.model = Model::new();
+    // build_model(
+    //     &mut app.model,
+    //     &mut LogReader::new(&app.settings),
+    //     &app.settings,
+    // )
+    // .unwrap();
 
     if let Some((class, index)) = app.selected_class.as_mut() {
         if let Some(class_index) = app.model.index_of(&class) {
@@ -249,6 +254,11 @@ fn key_span(key: &str) -> Span<'static> {
 }
 
 fn footer_line(app: &App) -> Line<'static> {
+    let frame_time = app.last_frame_end.map_or_else(
+        || "—".to_string(),
+        |end| format_short_duration(end.elapsed()),
+    );
+
     Line::from(vec![
         key_span("q"),
         Span::raw("quit  •  "),
@@ -261,6 +271,10 @@ fn footer_line(app: &App) -> Line<'static> {
         key_span("↑/↓"),
         Span::raw("move  •  "),
         key_span("esc"),
-        Span::raw("back"),
+        Span::raw("back  •  "),
+        Span::styled(
+            format!("ft: {}", frame_time),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
     ])
 }
