@@ -25,6 +25,11 @@ pub struct App {
     selected_title: Option<(String, usize)>,
     follow: bool,
     last_frame_end: Option<Instant>,
+    update_time: Duration,
+    render_time: Duration,
+    timeline_time: Duration,
+    classes_time: Duration,
+    titles_time: Duration,
 }
 
 impl App {
@@ -37,6 +42,11 @@ impl App {
             selected_title: None,
             follow: false,
             last_frame_end: None,
+            update_time: Duration::ZERO,
+            render_time: Duration::ZERO,
+            timeline_time: Duration::ZERO,
+            classes_time: Duration::ZERO,
+            titles_time: Duration::ZERO,
         }
     }
 }
@@ -51,31 +61,38 @@ pub fn start_tui(settings: Settings) -> Result<()> {
         build_model(&mut app.model, &mut reader, &app.settings).unwrap();
     }
 
-    update(&mut app);
+    let _ = update(&mut app);
     ratatui::run(|terminal| run(terminal, &mut app)).context("failed to run app")
 }
 
 fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     loop {
+        let render_start = Instant::now();
         terminal.draw(|f| render(f, app))?;
+        app.render_time = render_start.elapsed();
+
         event_loop(app)?;
         app.last_frame_end = Some(Instant::now());
+
+        let update_start = Instant::now();
+        update(app);
+        app.update_time = update_start.elapsed();
+
         if app.should_quit {
             break;
         }
-        update(app);
     }
     Ok(())
 }
 
 fn update(app: &mut App) {
-    // app.model = Model::new();
-    // build_model(
-    //     &mut app.model,
-    //     &mut LogReader::new(&app.settings),
-    //     &app.settings,
-    // )
-    // .unwrap();
+    app.model = Model::new();
+    build_model(
+        &mut app.model,
+        &mut LogReader::new(&app.settings),
+        &app.settings,
+    )
+    .unwrap();
 
     if let Some((class, index)) = app.selected_class.as_mut() {
         if let Some(class_index) = app.model.index_of(&class) {
@@ -121,11 +138,13 @@ fn update(app: &mut App) {
 }
 
 fn render(frame: &mut Frame, app: &mut App) {
+    let timeline_start = Instant::now();
     let Some(timelines_text) = render_log(&app.model, &app.settings) else {
         let msg = Paragraph::new("No log data for this interval. (press 'q' to quit)");
         frame.render_widget(msg, frame.area());
         return;
     };
+    app.timeline_time = timeline_start.elapsed();
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -153,8 +172,12 @@ fn render(frame: &mut Frame, app: &mut App) {
         ])
         .split(chunks[2]);
 
+    let classes_start = Instant::now();
     let class_table = build_class_table(&app.model, &app.selected_class, table_cols[0].width);
+    app.classes_time = classes_start.elapsed();
+    let titles_start = Instant::now();
     let title_table = build_title_table(&app.model, &app.selected_class, &app.selected_title);
+    app.titles_time = titles_start.elapsed();
     frame.render_widget(class_table, table_cols[0]);
     draw_inner_border(frame, table_cols[1], Style::default());
     frame.render_widget(title_table, table_cols[2]);
@@ -274,6 +297,31 @@ fn footer_line(app: &App) -> Line<'static> {
         Span::raw("back  •  "),
         Span::styled(
             format!("ft: {}", frame_time),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+        Span::raw("  •  "),
+        Span::styled(
+            format!("update: {}", format_short_duration(app.update_time)),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+        Span::raw("  •  "),
+        Span::styled(
+            format!("render: {}", format_short_duration(app.render_time)),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+        Span::raw("  •  "),
+        Span::styled(
+            format!("timeline: {}", format_short_duration(app.timeline_time)),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+        Span::raw("  •  "),
+        Span::styled(
+            format!("classes: {}", format_short_duration(app.classes_time)),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+        Span::raw("  •  "),
+        Span::styled(
+            format!("titles: {}", format_short_duration(app.titles_time)),
             Style::default().add_modifier(Modifier::DIM),
         ),
     ])
