@@ -18,23 +18,25 @@ pub enum LogMsg {
     Shutdown,
 }
 
-struct LogWriter {
+struct LogWriter<B: Fn(i64, String, String) + Send + Clone> {
     base_dir: PathBuf,
-    day_key: (i32, u32, u32), // (year, month, day)
+    day_key: (i32, u32, u32),
     file: File,
     settings: Settings,
+    broadcaster: B,
 }
 
-impl LogWriter {
-    fn init(base_dir: PathBuf, settings: Settings) -> io::Result<Self> {
+impl<B: Fn(i64, String, String) + Send + Clone> LogWriter<B> {
+    fn init(base_dir: PathBuf, settings: Settings, broadcaster: B) -> io::Result<Self> {
         create_dir_all(&base_dir)?;
         let (day_key, path) = Self::today_path(&base_dir);
-        let file = LogWriter::create_log_file(&path)?;
+        let file = create_log_file(&path)?;
         Ok(Self {
             base_dir,
             day_key,
             file,
             settings,
+            broadcaster,
         })
     }
 
@@ -48,7 +50,7 @@ impl LogWriter {
     fn ensure_today(&mut self) -> io::Result<()> {
         let (today_key, path) = Self::today_path(&self.base_dir);
         if today_key != self.day_key {
-            self.file = LogWriter::create_log_file(&path)?;
+            self.file = create_log_file(&path)?;
             self.day_key = today_key;
         }
         Ok(())
@@ -59,26 +61,28 @@ impl LogWriter {
         let safe_title = title.replace('"', "\"\"");
         let line = format!("{},{},\"{}\"\n", ts, class, safe_title);
         self.file.write_all(line.as_bytes())?;
+        (self.broadcaster)(ts, class.to_string(), safe_title.clone());
         if self.settings.snitch {
             send_datagram(line.as_str());
         }
 
         Ok(())
     }
-
-    fn create_log_file(path: &PathBuf) -> io::Result<File> {
-        let mut f = OpenOptions::new().create(true).append(true).open(&path)?;
-        if f.metadata()?.len() == 0 {
-            f.write_all(b"timestamp,class,title\n")?;
-        }
-
-        Ok(f)
-    }
 }
 
-pub async fn run_log_writer(
+fn create_log_file(path: &PathBuf) -> io::Result<File> {
+    let mut f = OpenOptions::new().create(true).append(true).open(&path)?;
+    if f.metadata()?.len() == 0 {
+        f.write_all(b"timestamp,class,title\n")?;
+    }
+
+    Ok(f)
+}
+
+pub async fn run_log_writer<B: Fn(i64, String, String) + Send + Clone + 'static>(
     mut receiver_handle: tokio::sync::mpsc::Receiver<LogMsg>,
     settings: Settings,
+    broadcaster: B,
 ) {
     let base_dir = BaseDirs::new()
         .map(|b| b.data_dir().to_path_buf())
@@ -86,17 +90,16 @@ pub async fn run_log_writer(
         .join("hyprlog");
 
     let mut writer = loop {
-        match LogWriter::init(base_dir.clone(), settings.clone()) {
+        match LogWriter::init(base_dir.clone(), settings.clone(), broadcaster.clone()) {
             Ok(w) => break w,
             Err(e) => {
                 let ts = chrono::Utc::now().timestamp_millis();
-                log_error(format!("{ts}, [writer] init failed: {e}; retrying in 1s")); // output to file
+                log_error(format!("{ts}, [writer] init failed: {e}; retrying in 1s"));
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }
     };
 
-    //  listen for LogMsg(s) and write them to todays log file, that basically sums up this whole file
     while let Some(msg) = receiver_handle.recv().await {
         match msg {
             LogMsg::Line { ts, class, title } => {

@@ -1,3 +1,8 @@
+[workspace]
+members = [
+    "src/hyprlog-ipc",
+]
+
 [package]
 name = "hyprlog"
 version = "0.1.1"
@@ -22,6 +27,7 @@ path = "src/hyprlogd/main.rs"
 # shared
 chrono = "0.4.40"
 directories = "6.0.0"
+hyprlog-ipc = { path = "src/hyprlog-ipc" }
 
 # hyprlog
 anyhow = "1.0.98"
@@ -35,7 +41,8 @@ tokio = { version = "1.44.1",  features = ["full"] }
 zbus = { version = "=4.4.0", default-features = false, features = ["tokio"] }
 zvariant = "=4.2.0"
 zvariant_utils = "=2.1.0"
-futures-util = "0.3.31"              
+futures-util = "0.3.31"
 ratatui = "0.30.0"
 crossterm = "0.29.0"
 color-eyre = "0.6.5"
+uuid = { version = "1", features = ["v4"] }

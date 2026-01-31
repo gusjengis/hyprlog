@@ -1,0 +1,9 @@
+[package]
+name = "hyprlog-ipc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+postcard = { version = "1.0", features = ["use-std"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+serde = { version = "1", features = ["derive"] }

@@ -6,12 +6,13 @@ use crossterm::event::{self, KeyCode, KeyEventKind};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Borders, Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::log_reader::LogReader;
-use crate::model::Model;
-use crate::model_building::{build_model, update_model};
+use crate::model::{Log, Model};
+use crate::model_building::{build_model, filter_class};
+use crate::stream_client::{StreamClient, StreamEvent};
 use crate::view::{
     build_class_table, build_title_table, format_short_duration, header, render_log,
 };
@@ -26,15 +27,19 @@ pub struct App {
     follow: bool,
     last_frame_end: Option<Instant>,
     update_time: Duration,
-    render_time: Duration,
     timeline_time: Duration,
     classes_time: Duration,
     titles_time: Duration,
+    stream_client: Option<StreamClient>,
+    next_expected_seq: u64,
+    pending_logs: Vec<Log>,
+    needs_full_rebuild: bool,
 }
 
 impl App {
     pub fn new(settings: Settings) -> Self {
-        Self {
+        let stream_client = StreamClient::connect().ok();
+        let mut app = Self {
             settings,
             model: Model::new(),
             should_quit: false,
@@ -43,11 +48,52 @@ impl App {
             follow: false,
             last_frame_end: None,
             update_time: Duration::ZERO,
-            render_time: Duration::ZERO,
             timeline_time: Duration::ZERO,
             classes_time: Duration::ZERO,
             titles_time: Duration::ZERO,
+            stream_client,
+            next_expected_seq: 0,
+            pending_logs: Vec::new(),
+            needs_full_rebuild: false,
+        };
+
+        if let Some(ref mut client) = app.stream_client {
+            while let Ok(event) = client.try_recv() {
+                match event {
+                    StreamEvent::Welcome { current_seq } => {
+                        app.next_expected_seq = current_seq;
+                    }
+                    StreamEvent::Log {
+                        seq,
+                        timestamp,
+                        class,
+                        title,
+                    } => {
+                        if seq == app.next_expected_seq {
+                            app.next_expected_seq += 1;
+                            app.pending_logs.push(Log::new(
+                                timestamp as u64,
+                                None,
+                                filter_class(class, &app.settings),
+                                title,
+                            ));
+                        } else if seq > app.next_expected_seq {
+                            app.needs_full_rebuild = true;
+                            app.next_expected_seq = seq + 1;
+                        }
+                    }
+                    StreamEvent::Gap { expected, received } => {
+                        app.needs_full_rebuild = true;
+                        app.next_expected_seq = received + 1;
+                    }
+                    StreamEvent::Disconnected => {
+                        app.needs_full_rebuild = true;
+                    }
+                }
+            }
         }
+
+        app
     }
 }
 
@@ -61,38 +107,97 @@ pub fn start_tui(settings: Settings) -> Result<()> {
         build_model(&mut app.model, &mut reader, &app.settings).unwrap();
     }
 
-    let _ = update(&mut app);
+    let _ = update(&mut app, true);
     ratatui::run(|terminal| run(terminal, &mut app)).context("failed to run app")
 }
 
 fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+    let mut force_render = true;
     loop {
-        let render_start = Instant::now();
-        terminal.draw(|f| render(f, app))?;
-        app.render_time = render_start.elapsed();
+        let had_events = process_stream_events(app);
+        if had_events {
+            force_render = true;
+        }
 
-        event_loop(app)?;
+        terminal.draw(|f| render(f, app))?;
+
+        if !force_render {
+            event_loop(app)?;
+        }
         if app.should_quit {
             break;
+        }
+
+        if force_render {
+            force_render = false;
         }
 
         app.last_frame_end = Some(Instant::now());
 
         let update_start = Instant::now();
-        update(app);
+        update(app, force_render);
         app.update_time = update_start.elapsed();
     }
     Ok(())
 }
 
-fn update(app: &mut App) {
-    app.model = Model::new();
-    build_model(
-        &mut app.model,
-        &mut LogReader::new(&app.settings),
-        &app.settings,
-    )
-    .unwrap();
+fn process_stream_events(app: &mut App) -> bool {
+    let mut had_events = false;
+    if let Some(ref mut client) = app.stream_client {
+        while let Ok(event) = client.try_recv() {
+            had_events = true;
+            match event {
+                StreamEvent::Welcome { current_seq } => {
+                    app.next_expected_seq = current_seq;
+                }
+                StreamEvent::Log {
+                    seq,
+                    timestamp,
+                    class,
+                    title,
+                } => {
+                    if seq == app.next_expected_seq {
+                        app.next_expected_seq += 1;
+                        app.pending_logs.push(Log::new(
+                            timestamp as u64,
+                            None,
+                            filter_class(class, &app.settings),
+                            title,
+                        ));
+                    } else if seq > app.next_expected_seq {
+                        app.needs_full_rebuild = true;
+                        app.next_expected_seq = seq + 1;
+                    }
+                }
+                StreamEvent::Gap { .. } => {
+                    app.needs_full_rebuild = true;
+                }
+                StreamEvent::Disconnected => {
+                    app.needs_full_rebuild = true;
+                }
+            }
+        }
+    }
+    had_events
+}
+
+fn update(app: &mut App, force_render: bool) {
+    if app.needs_full_rebuild || force_render {
+        app.model = Model::new();
+        build_model(
+            &mut app.model,
+            &mut LogReader::new(&app.settings),
+            &app.settings,
+        )
+        .unwrap();
+        app.pending_logs.clear();
+        app.needs_full_rebuild = false;
+    } else if !app.pending_logs.is_empty() {
+        for log in app.pending_logs.drain(..) {
+            app.model.add_log(log);
+        }
+        app.model.sort();
+    }
 
     if let Some((class, index)) = app.selected_class.as_mut() {
         if let Some(class_index) = app.model.index_of(&class) {
@@ -302,11 +407,6 @@ fn footer_line(app: &App) -> Line<'static> {
         Span::raw("  •  "),
         Span::styled(
             format!("update: {}", format_short_duration(app.update_time)),
-            Style::default().add_modifier(Modifier::DIM),
-        ),
-        Span::raw("  •  "),
-        Span::styled(
-            format!("render: {}", format_short_duration(app.render_time)),
             Style::default().add_modifier(Modifier::DIM),
         ),
         Span::raw("  •  "),

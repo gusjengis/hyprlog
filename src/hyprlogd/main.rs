@@ -1,14 +1,18 @@
 mod log_writer;
 mod shutdown;
 mod socket;
+mod stream_server;
 
-use std::{env, time::Duration};
+use std::{env, path::Path, sync::Arc, time::Duration};
 
 use hyprland::event_listener::{AsyncEventListener, WindowEventData};
 use log_writer::{log_error, run_log_writer, LogMsg};
 use shutdown::{try_spawn_logind_shutdown_watcher, wait_for_shutdown_signal};
 use socket::start_socket_listener;
+use stream_server::StreamServer;
 use tokio::sync::mpsc;
+
+const STREAM_SOCKET_PATH: &str = "/tmp/hyprlog-stream.sock";
 
 #[tokio::main]
 async fn main() -> hyprland::Result<()> {
@@ -20,13 +24,23 @@ async fn main() -> hyprland::Result<()> {
         _ => {}
     };
 
-    // setup mpsc channel for sending messages to the log writer
     let (sender_handle, receiver_handle) = mpsc::channel::<LogMsg>(1024);
 
-    // start the log writer, this handles all writing to log files from one thread to avoid conflicts
-    let writer_jh = tokio::spawn(run_log_writer(receiver_handle, settings));
+    let stream_server = Arc::new(StreamServer::new(Path::new(STREAM_SOCKET_PATH))?);
+    let broadcaster = {
+        let server = Arc::clone(&stream_server);
+        move |ts: i64, class: String, title: String| {
+            server.broadcast(ts, class, title);
+        }
+    };
 
-    // log boot
+    let writer_jh = tokio::spawn(run_log_writer(receiver_handle, settings, broadcaster));
+
+    let stream_server_run = Arc::clone(&stream_server);
+    let _stream_jh = tokio::spawn(async move {
+        stream_server_run.run().await;
+    });
+
     let _ = sender_handle
         .send(LogMsg::Line {
             ts: chrono::Utc::now().timestamp_millis(),
@@ -35,7 +49,6 @@ async fn main() -> hyprland::Result<()> {
         })
         .await;
 
-    // listen for focus events from hyprland, the core of this program's utility
     {
         let sender_handle_static: &'static mpsc::Sender<LogMsg> =
             Box::leak(Box::new(sender_handle.clone()));
@@ -64,34 +77,29 @@ async fn main() -> hyprland::Result<()> {
                 }
                 if let Err(e) = event_listener.start_listener_async().await {
                     let ts = chrono::Utc::now().timestamp_millis();
-                    log_error(format!("{ts}, [hypr] listener ended: {e}; retrying in 1s")); // output to file
+                    log_error(format!("{ts}, [hypr] listener ended: {e}; retrying in 1s"));
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
         });
     }
 
-    // listen for signals from the hyprlog CLI, this is used to get idle and resume signals
     {
         let sender_handle_sock = sender_handle.clone();
         tokio::spawn(async move {
             loop {
                 if let Err(e) = start_socket_listener(sender_handle_sock.clone()).await {
                     let ts = chrono::Utc::now().timestamp_millis();
-                    log_error(format!("{ts}, [sock] listener failed: {e}; retrying in 3s",)); // output to file
+                    log_error(format!("{ts}, [sock] listener failed: {e}; retrying in 3s",));
                     tokio::time::sleep(Duration::from_secs(3)).await;
                 }
             }
         });
     }
 
-    // Listen to logind for shutdown signal, this gives enough time to reliably log shutdowns
     if let Some(jhandle) = try_spawn_logind_shutdown_watcher(sender_handle.clone()).await {
         let _ = jhandle.await;
     } else {
-        // As a fallback for systems that don't have systemd, listen for the signals that come
-        // during shutdown. This only works half the time in my testing. If someone who isn't on
-        // systemd wants to handle shutdown properly for their system that would be awesome.
         wait_for_shutdown_signal().await;
 
         let _ = sender_handle
@@ -103,7 +111,6 @@ async fn main() -> hyprland::Result<()> {
             .await;
     }
 
-    // wrap up
     drop(sender_handle);
     let _ = writer_jh.await;
 

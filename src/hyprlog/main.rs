@@ -4,6 +4,7 @@ mod interval;
 mod log_reader;
 mod model;
 mod model_building;
+mod stream_client;
 mod timeline_sections;
 mod tui;
 mod view;
