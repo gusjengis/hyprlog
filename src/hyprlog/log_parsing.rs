@@ -1,115 +1,7 @@
 use std::{collections::HashMap, error::Error};
 
+use crate::model::Log;
 use crate::{log_reader::LogReader, model::Model, Settings};
-
-pub fn compute_durations(
-    reader: &mut LogReader,
-    settings: &Settings,
-) -> Result<(Vec<(String, u64)>, u64), Box<dyn Error>> {
-    let mut map: HashMap<String, u64> = HashMap::new();
-
-    let mut total = 0;
-    let mut last_timestamp = None;
-    let mut last_class: Option<String> = None;
-    let mut last_title: Option<String> = None;
-
-    let _ = reader.reset();
-    for row in reader {
-        let record = row?;
-        let timestamp: u64 = (record[0].parse::<i64>()?) as u64;
-        let mut class = record[1].to_string();
-        let title = record[2].to_string();
-
-        // filter classes using hashmap to rename them according to config
-        class = match settings.config.class_mappings.get(&class) {
-            Some(filtered_class) => filtered_class.clone(),
-            None => class,
-        };
-
-        if class.contains("steam_app") {
-            class = String::from("steam");
-        }
-
-        if class == "SYSTEM" {
-            match title.as_str() {
-                "boot" => {
-                    last_timestamp = None;
-                    last_class = None;
-                    last_title = None;
-                }
-                "resume" => {
-                    last_timestamp = Some(timestamp);
-                }
-                "shutdown" | "idle" => {
-                    add_interval_to_map(
-                        last_timestamp,
-                        timestamp,
-                        last_class.as_ref(),
-                        last_title.as_ref(),
-                        settings,
-                        &mut total,
-                        &mut map,
-                    );
-                    last_timestamp = None;
-                }
-                _ => {}
-            }
-        } else {
-            add_interval_to_map(
-                last_timestamp,
-                timestamp,
-                last_class.as_ref(),
-                last_title.as_ref(),
-                settings,
-                &mut total,
-                &mut map,
-            );
-
-            last_timestamp = Some(timestamp);
-            last_class = Some(class.clone());
-            last_title = Some(title.clone());
-            if settings.full {
-                last_title = Some(format!("{class}: {title}"));
-            }
-        }
-    }
-
-    let timestamp = chrono::Utc::now().timestamp_millis() as u64;
-    add_interval_to_map(
-        last_timestamp,
-        timestamp,
-        last_class.as_ref(),
-        last_title.as_ref(),
-        settings,
-        &mut total,
-        &mut map,
-    );
-
-    let mut vec: Vec<(String, u64)> = map.into_iter().collect();
-    vec.sort_by(|a, b| b.1.cmp(&a.1));
-    Ok((vec, total))
-}
-
-fn add_interval_to_map(
-    last_timestamp: Option<u64>,
-    end: u64,
-    last_class: Option<&String>,
-    last_title: Option<&String>,
-    settings: &Settings,
-    total: &mut u64,
-    map: &mut HashMap<String, u64>,
-) {
-    if let (Some(start), Some(class), Some(title)) = (last_timestamp, last_class, last_title) {
-        let duration = (end - start) as u64;
-        *total += duration;
-
-        if settings.full || class == &settings.class_arg {
-            *map.entry(title.clone()).or_default() += duration;
-        } else if settings.class_arg == "" {
-            *map.entry(class.clone()).or_default() += duration;
-        }
-    }
-}
 
 pub fn timeline(
     model: &Model,
@@ -122,7 +14,15 @@ pub fn timeline(
     let mut sections: Vec<(String, i64, i64, bool, bool)> =
         vec![(String::from(""), 0, 0, false, false); width];
 
-    for log in &model.logs {
+    let logs: Vec<&Log> = if settings.class_arg.is_empty() {
+        model.iter_all_logs().collect()
+    } else if let Some(class) = model.classes.iter().find(|c| c.class == settings.class_arg) {
+        class.iter_logs(&model.logs).collect()
+    } else {
+        Vec::new()
+    };
+
+    for log in logs {
         if let Some(end) = log.end {
             assign_interval_to_section(
                 log.start,

@@ -12,9 +12,9 @@ use std::fmt::Write;
 use terminal_size::Width;
 
 pub fn render_log(model: &Model, settings: &Settings) -> Option<Text<'static>> {
-    let durations = get_sorted_durations(model, settings);
+    let labels = get_labels(model, settings);
 
-    if durations.is_empty() {
+    if labels.is_empty() {
         if &settings.class_arg == "" {
             println!("Empty log.");
         } else {
@@ -23,9 +23,7 @@ pub fn render_log(model: &Model, settings: &Settings) -> Option<Text<'static>> {
         return None;
     }
 
-    let colors = key_to_color_map(&durations);
-    let labels: Vec<String> = durations.iter().map(|(s, _)| s.clone()).collect();
-
+    let colors = key_to_color_map(&labels);
     let timelines = render_timelines(model, &colors, labels, settings);
 
     return Some(timelines);
@@ -500,13 +498,13 @@ pub fn color_from_index(index: usize) -> Color {
     };
 }
 
-fn key_to_color_map(list: &Vec<(String, u64)>) -> HashMap<String, Color> {
+fn key_to_color_map(list: &Vec<String>) -> HashMap<String, Color> {
     let mut res: HashMap<String, Color> = HashMap::new();
     res.insert(String::from(""), Color::Black);
     let mut color_index = 0;
     for entry in list {
-        if !res.contains_key(&entry.0) {
-            res.insert(entry.0.clone(), color_from_index(color_index));
+        if !res.contains_key(entry) {
+            res.insert(entry.clone(), color_from_index(color_index));
             color_index += 1;
         }
     }
@@ -514,37 +512,27 @@ fn key_to_color_map(list: &Vec<(String, u64)>) -> HashMap<String, Color> {
     return res;
 }
 
-pub fn get_sorted_durations(model: &Model, settings: &Settings) -> Vec<(String, u64)> {
-    let mut durations: Vec<(String, u64)> = Vec::new();
+pub fn get_labels(model: &Model, settings: &Settings) -> Vec<String> {
+    let mut labels: Vec<String> = Vec::new();
 
     if settings.full {
         for class in &model.classes {
             for title in &class.titles {
                 let label = format!("{}: {}", class.class, title.title);
-                let duration = title.total_duration(&model.logs);
-                if duration > 0 {
-                    durations.push((label, duration));
-                }
+                labels.push(label);
             }
         }
     } else if settings.class_arg == "" {
         for class in &model.classes {
-            let duration = class.total_duration(&model.logs);
-            if duration > 0 {
-                durations.push((class.class.clone(), duration));
-            }
+            labels.push(class.class.clone());
         }
     } else {
         if let Some(class) = model.classes.iter().find(|c| c.class == settings.class_arg) {
             for title in &class.titles {
-                let duration = title.total_duration(&model.logs);
-                if duration > 0 {
-                    durations.push((title.title.clone(), duration));
-                }
+                labels.push(title.title.clone());
             }
         }
     }
 
-    durations.sort_by(|a, b| b.1.cmp(&a.1));
-    durations
+    labels
 }

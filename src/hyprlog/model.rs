@@ -100,6 +100,12 @@ impl Class {
     pub fn index_of(&self, title: &str) -> Option<usize> {
         self.titles.iter().position(|t| t.title == title)
     }
+
+    pub fn iter_logs<'a>(&'a self, logs: &'a Vec<Log>) -> impl Iterator<Item = &Log> + 'a {
+        self.titles
+            .iter()
+            .flat_map(move |title| title.logs.iter().map(move |&log_index| &logs[log_index]))
+    }
 }
 
 pub struct Model {
@@ -196,5 +202,14 @@ impl Model {
 
     pub fn index_of(&self, class: &str) -> Option<usize> {
         self.classes.iter().position(|c| c.class == class)
+    }
+
+    pub fn iter_all_logs(&self) -> impl Iterator<Item = &Log> {
+        self.classes.iter().flat_map(|class| {
+            class
+                .titles
+                .iter()
+                .flat_map(|title| title.logs.iter().map(|&log_index| &self.logs[log_index]))
+        })
     }
 }

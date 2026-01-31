@@ -72,27 +72,27 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
         app.render_time = render_start.elapsed();
 
         event_loop(app)?;
+        if app.should_quit {
+            break;
+        }
+
         app.last_frame_end = Some(Instant::now());
 
         let update_start = Instant::now();
         update(app);
         app.update_time = update_start.elapsed();
-
-        if app.should_quit {
-            break;
-        }
     }
     Ok(())
 }
 
 fn update(app: &mut App) {
-    app.model = Model::new();
-    build_model(
-        &mut app.model,
-        &mut LogReader::new(&app.settings),
-        &app.settings,
-    )
-    .unwrap();
+    // app.model = Model::new();
+    // build_model(
+    //     &mut app.model,
+    //     &mut LogReader::new(&app.settings),
+    //     &app.settings,
+    // )
+    // .unwrap();
 
     if let Some((class, index)) = app.selected_class.as_mut() {
         if let Some(class_index) = app.model.index_of(&class) {
