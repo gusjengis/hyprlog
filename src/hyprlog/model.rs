@@ -212,4 +212,12 @@ impl Model {
                 .flat_map(|title| title.logs.iter().map(|&log_index| &self.logs[log_index]))
         })
     }
+    pub fn get_title(&self, class_name: &str, title_name: &str) -> Option<&Title> {
+        self.classes
+            .iter()
+            .find(|c| c.class == class_name)?
+            .titles
+            .iter()
+            .find(|t| t.title == title_name)
+    }
 }
