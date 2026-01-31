@@ -105,7 +105,7 @@ fn update(app: &mut App) {
                         *index = title_index;
                     }
                 } else {
-                    let class_struct = &app.model.get_class(class.clone());
+                    let class_struct = &app.model.get_class_mut(class.clone());
                     if *index >= class_struct.titles.len() {
                         *index = class_struct.titles.len() - 1;
                     }
@@ -205,7 +205,7 @@ fn event_loop(app: &mut App) -> Result<()> {
                             if let Some((title, index)) = app.selected_title.as_mut() {
                                 if *index > 0 {
                                     *index = (*index - 1);
-                                    *title = app.model.get_class(class.clone()).titles[*index]
+                                    *title = app.model.get_class_mut(class.clone()).titles[*index]
                                         .title
                                         .clone();
                                 }
@@ -221,8 +221,8 @@ fn event_loop(app: &mut App) -> Result<()> {
                         } else if let Some((class, index)) = app.selected_class.as_mut() {
                             if let Some((title, index)) = app.selected_title.as_mut() {
                                 *index = (*index + 1)
-                                    .min(app.model.get_class(class.clone()).titles.len() - 1);
-                                *title = app.model.get_class(class.clone()).titles[*index]
+                                    .min(app.model.get_class_mut(class.clone()).titles.len() - 1);
+                                *title = app.model.get_class_mut(class.clone()).titles[*index]
                                     .title
                                     .clone();
                             } else {

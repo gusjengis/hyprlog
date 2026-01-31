@@ -7,7 +7,7 @@ pub fn timeline(
     model: &Model,
     width: usize,
     settings: &Settings,
-    label: Option<&String>,
+    title: Option<&String>,
 ) -> Vec<(String, i64, i64, bool, bool)> {
     let ms_per_section = (settings.interval.width() / width as u64) as u64;
     let starting_ms = settings.interval.start.timestamp_millis() as u64;
@@ -32,7 +32,7 @@ pub fn timeline(
                 starting_ms,
                 ms_per_section,
                 settings,
-                label,
+                title,
                 &mut sections,
             );
         } else {
@@ -50,7 +50,7 @@ pub fn timeline(
             starting_ms,
             ms_per_section,
             settings,
-            label,
+            title,
             &mut sections,
         );
     }

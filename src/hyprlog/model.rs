@@ -77,7 +77,7 @@ impl Class {
         }
     }
 
-    pub fn get_title(&mut self, title: String) -> &mut Title {
+    pub fn get_title_mut(&mut self, title: String) -> &mut Title {
         if let Some(title_index) = self.title_map.get(&title) {
             &mut self.titles[*title_index]
         } else {
@@ -123,7 +123,7 @@ impl Model {
         }
     }
 
-    pub fn get_class(&mut self, class: String) -> &mut Class {
+    pub fn get_class_mut(&mut self, class: String) -> &mut Class {
         if let Some(class_index) = self.class_map.get(&class) {
             &mut self.classes[*class_index]
         } else {
@@ -145,8 +145,8 @@ impl Model {
 
         let log_index = self.logs.len() - 1;
 
-        self.get_class(class_string)
-            .get_title(title_string)
+        self.get_class_mut(class_string)
+            .get_title_mut(title_string)
             .add_log(log_index, log_duration);
     }
 
@@ -160,8 +160,8 @@ impl Model {
         // Replace old log
         *newest_log = replacement_log;
         // Update total duration
-        self.get_class(class_string)
-            .get_title(title_string)
+        self.get_class_mut(class_string)
+            .get_title_mut(title_string)
             .update_log_duration(duration);
     }
 
