@@ -1,10 +1,10 @@
 mod config;
 mod daemon_commands;
 mod interval;
-mod log_parsing;
 mod log_reader;
 mod model;
 mod model_building;
+mod timeline_sections;
 mod tui;
 mod view;
 

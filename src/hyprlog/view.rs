@@ -1,5 +1,5 @@
-use crate::log_parsing::timeline;
 use crate::model::{Class, Model};
+use crate::timeline_sections::timeline;
 use crate::Settings;
 use std::time::Duration;
 // use colored::{Color, Colorize};
