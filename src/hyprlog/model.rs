@@ -77,6 +77,14 @@ impl Class {
         }
     }
 
+    pub fn get_title(&self, class: &String) -> Option<&Title> {
+        if let Some(title_index) = self.title_map.get(class) {
+            Some(&self.titles[*title_index])
+        } else {
+            None
+        }
+    }
+
     pub fn get_title_mut(&mut self, title: String) -> &mut Title {
         if let Some(title_index) = self.title_map.get(&title) {
             &mut self.titles[*title_index]
@@ -95,6 +103,10 @@ impl Class {
     pub fn sort(&mut self, logs: &Vec<Log>) {
         self.titles
             .sort_by(|a, b| b.total_duration(logs).cmp(&a.total_duration(logs)));
+        self.title_map.clear();
+        for (i, title) in self.titles.iter().enumerate() {
+            self.title_map.insert(title.title.clone(), i);
+        }
     }
 
     pub fn index_of(&self, title: &str) -> Option<usize> {
@@ -120,6 +132,14 @@ impl Model {
             classes: Vec::new(),
             class_map: HashMap::new(),
             logs: Vec::new(),
+        }
+    }
+
+    pub fn get_class(&self, class: &String) -> Option<&Class> {
+        if let Some(class_index) = self.class_map.get(class) {
+            Some(&self.classes[*class_index])
+        } else {
+            None
         }
     }
 
@@ -177,6 +197,10 @@ impl Model {
             b.total_duration(&self.logs)
                 .cmp(&a.total_duration(&self.logs))
         });
+        self.class_map.clear();
+        for (i, class) in self.classes.iter().enumerate() {
+            self.class_map.insert(class.class.clone(), i);
+        }
         for class in self.classes.iter_mut() {
             class.sort(&self.logs);
         }
@@ -212,12 +236,11 @@ impl Model {
                 .flat_map(|title| title.logs.iter().map(|&log_index| &self.logs[log_index]))
         })
     }
-    pub fn get_title(&self, class_name: &str, title_name: &str) -> Option<&Title> {
-        self.classes
-            .iter()
-            .find(|c| c.class == class_name)?
-            .titles
-            .iter()
-            .find(|t| t.title == title_name)
+    pub fn get_title(&self, class_name: &String, title_name: &String) -> Option<&Title> {
+        if let Some(class) = self.get_class(class_name) {
+            class.get_title(title_name)
+        } else {
+            None
+        }
     }
 }

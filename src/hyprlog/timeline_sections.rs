@@ -15,20 +15,29 @@ pub fn timeline(
         vec![(String::from(""), 0, 0, false, false); width];
 
     let logs: Vec<&Log> = if let Some(title_str) = title {
-        if let Some(title_obj) = model.get_title(&settings.class_arg, title_str) {
+        if settings.class_arg.is_empty() {
+            if let Some(class) = model.get_class(title_str) {
+                class.iter_logs(&model.logs).collect()
+            } else {
+                println!("B");
+                Vec::new()
+            }
+        } else if let Some(title_obj) = model.get_title(&settings.class_arg, title_str) {
             title_obj
                 .logs
                 .iter()
                 .map(|&log_index| &model.logs[log_index])
                 .collect()
         } else {
+            println!("A");
             Vec::new()
         }
     } else if settings.class_arg.is_empty() {
         model.iter_all_logs().collect()
-    } else if let Some(class) = model.classes.iter().find(|c| c.class == settings.class_arg) {
+    } else if let Some(class) = model.get_class(&settings.class_arg) {
         class.iter_logs(&model.logs).collect()
     } else {
+        println!("B");
         Vec::new()
     };
 

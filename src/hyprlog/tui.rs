@@ -86,13 +86,13 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
 }
 
 fn update(app: &mut App) {
-    // app.model = Model::new();
-    // build_model(
-    //     &mut app.model,
-    //     &mut LogReader::new(&app.settings),
-    //     &app.settings,
-    // )
-    // .unwrap();
+    app.model = Model::new();
+    build_model(
+        &mut app.model,
+        &mut LogReader::new(&app.settings),
+        &app.settings,
+    )
+    .unwrap();
 
     if let Some((class, index)) = app.selected_class.as_mut() {
         if let Some(class_index) = app.model.index_of(&class) {
