@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::thread;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -30,6 +33,7 @@ struct StreamState {
 
 pub struct StreamClient {
     state: Arc<Mutex<StreamState>>,
+    force_render: Arc<AtomicBool>,
     _join_handle: thread::JoinHandle<()>,
     client_id: Uuid,
 }
@@ -37,8 +41,10 @@ pub struct StreamClient {
 impl StreamClient {
     pub fn connect() -> std::io::Result<Self> {
         let state = Arc::new(Mutex::new(StreamState { events: Vec::new() }));
+        let force_render = Arc::new(AtomicBool::new(false));
         let client_id = Uuid::new_v4();
         let state_clone = Arc::clone(&state);
+        let force_render_clone = Arc::clone(&force_render);
 
         let join_handle = thread::spawn(move || {
             let rt = Runtime::new().unwrap();
@@ -54,21 +60,32 @@ impl StreamClient {
 
         Ok(Self {
             state,
+            force_render,
             _join_handle: join_handle,
             client_id,
         })
     }
 
-    pub fn try_recv(&self) -> Result<StreamEvent, std::sync::mpsc::TryRecvError> {
+    pub fn try_recv(&mut self) -> Result<StreamEvent, std::sync::mpsc::TryRecvError> {
         let mut state = self.state.lock().unwrap();
         if state.events.is_empty() {
             return Err(std::sync::mpsc::TryRecvError::Empty);
         }
-        Ok(state.events.remove(0))
+        let event = state.events.remove(0);
+
+        if matches!(event, StreamEvent::Log { .. }) {
+            self.force_render.store(true, Ordering::SeqCst);
+        }
+
+        Ok(event)
     }
 
     pub fn client_id(&self) -> Uuid {
         self.client_id
+    }
+
+    pub fn force_render(&self) -> &Arc<AtomicBool> {
+        &self.force_render
     }
 }
 

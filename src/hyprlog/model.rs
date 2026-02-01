@@ -60,6 +60,10 @@ impl Title {
         }
         duration
     }
+
+    fn add_duration(&mut self, duration: u64) {
+        self.total_duration += duration;
+    }
 }
 
 pub struct Class {
@@ -155,6 +159,17 @@ impl Model {
     }
 
     pub fn add_log(&mut self, log: Log) {
+        if let Some(last_log) = self.logs.last_mut() {
+            if last_log.end.is_none() {
+                last_log.end = Some(log.start);
+            }
+            let class_string = last_log.class.clone();
+            let title_string = last_log.title.clone();
+            let duration = last_log.duration();
+            self.get_class_mut(class_string)
+                .get_title_mut(title_string)
+                .add_duration(duration);
+        }
         let class_string = log.class.clone();
         let title_string = log.title.clone();
         let mut log_duration = log.duration();

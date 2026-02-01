@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use color_eyre::eyre::Context;
@@ -34,11 +35,17 @@ pub struct App {
     next_expected_seq: u64,
     pending_logs: Vec<Log>,
     needs_full_rebuild: bool,
+    force_render: std::sync::Arc<AtomicBool>,
 }
 
 impl App {
     pub fn new(settings: Settings) -> Self {
         let stream_client = StreamClient::connect().ok();
+        let force_render = stream_client
+            .as_ref()
+            .map(|c| c.force_render().clone())
+            .unwrap_or_else(|| std::sync::Arc::new(AtomicBool::new(false)));
+
         let mut app = Self {
             settings,
             model: Model::new(),
@@ -55,6 +62,7 @@ impl App {
             next_expected_seq: 0,
             pending_logs: Vec::new(),
             needs_full_rebuild: false,
+            force_render,
         };
 
         if let Some(ref mut client) = app.stream_client {
@@ -82,9 +90,8 @@ impl App {
                             app.next_expected_seq = seq + 1;
                         }
                     }
-                    StreamEvent::Gap { expected, received } => {
+                    StreamEvent::Gap { .. } => {
                         app.needs_full_rebuild = true;
-                        app.next_expected_seq = received + 1;
                     }
                     StreamEvent::Disconnected => {
                         app.needs_full_rebuild = true;
@@ -107,45 +114,36 @@ pub fn start_tui(settings: Settings) -> Result<()> {
         build_model(&mut app.model, &mut reader, &app.settings).unwrap();
     }
 
-    let _ = update(&mut app, true);
+    let _ = update(&mut app);
     ratatui::run(|terminal| run(terminal, &mut app)).context("failed to run app")
 }
 
 fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
-    let mut force_render = true;
     loop {
-        let had_events = process_stream_events(app);
-        if had_events {
-            force_render = true;
-        }
+        process_stream_events(app);
 
         terminal.draw(|f| render(f, app))?;
 
-        if !force_render {
-            event_loop(app)?;
-        }
+        event_loop(app)?;
+
         if app.should_quit {
             break;
         }
 
-        if force_render {
-            force_render = false;
-        }
+        app.force_render.store(false, Ordering::SeqCst);
 
         app.last_frame_end = Some(Instant::now());
 
         let update_start = Instant::now();
-        update(app, force_render);
+        update(app);
         app.update_time = update_start.elapsed();
     }
     Ok(())
 }
 
-fn process_stream_events(app: &mut App) -> bool {
-    let mut had_events = false;
+fn process_stream_events(app: &mut App) {
     if let Some(ref mut client) = app.stream_client {
         while let Ok(event) = client.try_recv() {
-            had_events = true;
             match event {
                 StreamEvent::Welcome { current_seq } => {
                     app.next_expected_seq = current_seq;
@@ -178,11 +176,10 @@ fn process_stream_events(app: &mut App) -> bool {
             }
         }
     }
-    had_events
 }
 
-fn update(app: &mut App, force_render: bool) {
-    if app.needs_full_rebuild || force_render {
+fn update(app: &mut App) {
+    if app.needs_full_rebuild {
         app.model = Model::new();
         build_model(
             &mut app.model,
@@ -291,64 +288,76 @@ fn render(frame: &mut Frame, app: &mut App) {
 }
 
 fn event_loop(app: &mut App) -> Result<()> {
-    if event::poll(Duration::from_millis(250)).context("event poll failed")? {
-        if let event::Event::Key(key) = event::read().context("event read failed")? {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Char('q') => app.should_quit = true,
-                    KeyCode::Char('m') => {
-                        app.settings.multi_timeline = !app.settings.multi_timeline
-                    }
-                    KeyCode::Char('f') => {
-                        app.follow = !app.follow;
-                        app.selected_title = None;
-                    }
-                    KeyCode::Up => {
-                        if let None = app.selected_class.as_ref() {
-                            app.selected_class = Some((app.model.classes[0].class.clone(), 0));
-                        } else if let Some((class, index)) = app.selected_class.as_mut() {
-                            if let Some((title, index)) = app.selected_title.as_mut() {
-                                if *index > 0 {
+    let start = Instant::now();
+    loop {
+        if start.elapsed() > Duration::from_millis(250) {
+            return Ok(());
+        }
+        if app.force_render.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        if event::poll(Duration::ZERO).context("event poll failed")? {
+            if let event::Event::Key(key) = event::read().context("event read failed")? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') => app.should_quit = true,
+                        KeyCode::Char('m') => {
+                            app.settings.multi_timeline = !app.settings.multi_timeline
+                        }
+                        KeyCode::Char('f') => {
+                            app.follow = !app.follow;
+                            app.selected_title = None;
+                        }
+                        KeyCode::Up => {
+                            if let None = app.selected_class.as_ref() {
+                                app.selected_class = Some((app.model.classes[0].class.clone(), 0));
+                            } else if let Some((class, index)) = app.selected_class.as_mut() {
+                                if let Some((title, index)) = app.selected_title.as_mut() {
+                                    if *index > 0 {
+                                        *index = (*index - 1);
+                                        *title = app.model.get_class_mut(class.clone()).titles
+                                            [*index]
+                                            .title
+                                            .clone();
+                                    }
+                                } else if *index > 0 {
                                     *index = (*index - 1);
+                                    *class = app.model.classes[*index].class.clone();
+                                }
+                            }
+                        }
+                        KeyCode::Down => {
+                            if let None = app.selected_class.as_ref() {
+                                app.selected_class = Some((app.model.classes[0].class.clone(), 0));
+                            } else if let Some((class, index)) = app.selected_class.as_mut() {
+                                if let Some((title, index)) = app.selected_title.as_mut() {
+                                    *index = (*index + 1).min(
+                                        app.model.get_class_mut(class.clone()).titles.len() - 1,
+                                    );
                                     *title = app.model.get_class_mut(class.clone()).titles[*index]
                                         .title
                                         .clone();
+                                } else {
+                                    *index = (*index + 1).min(app.model.classes.len() - 1);
+                                    *class = app.model.classes[*index].class.clone();
                                 }
-                            } else if *index > 0 {
-                                *index = (*index - 1);
-                                *class = app.model.classes[*index].class.clone();
                             }
                         }
-                    }
-                    KeyCode::Down => {
-                        if let None = app.selected_class.as_ref() {
-                            app.selected_class = Some((app.model.classes[0].class.clone(), 0));
-                        } else if let Some((class, index)) = app.selected_class.as_mut() {
-                            if let Some((title, index)) = app.selected_title.as_mut() {
-                                *index = (*index + 1)
-                                    .min(app.model.get_class_mut(class.clone()).titles.len() - 1);
-                                *title = app.model.get_class_mut(class.clone()).titles[*index]
-                                    .title
-                                    .clone();
-                            } else {
-                                *index = (*index + 1).min(app.model.classes.len() - 1);
-                                *class = app.model.classes[*index].class.clone();
+                        KeyCode::Esc => {
+                            if app.selected_title.is_some() {
+                                app.selected_title = None;
+                            } else if app.selected_class.is_some() {
+                                app.selected_class = None;
                             }
                         }
+                        _ => {}
                     }
-                    KeyCode::Esc => {
-                        if app.selected_title.is_some() {
-                            app.selected_title = None;
-                        } else if app.selected_class.is_some() {
-                            app.selected_class = None;
-                        }
-                    }
-                    _ => {}
                 }
             }
+            return Ok(());
         }
     }
-    Ok(())
 }
 
 fn draw_inner_border(frame: &mut Frame, area: Rect, style: Style) {
