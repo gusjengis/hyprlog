@@ -1,20 +1,12 @@
-use std::{collections::HashMap, error::Error};
-
 use crate::model::Log;
-use crate::{log_reader::LogReader, model::Model, Settings};
+use crate::{model::Model, Settings};
 
-pub fn timeline(
-    model: &Model,
-    width: usize,
+fn get_relevant_logs<'a>(
+    model: &'a Model,
     settings: &Settings,
     title: Option<&String>,
-) -> Vec<(String, i64, i64, bool, bool)> {
-    let ms_per_section = (settings.interval.width() / width as u64) as u64;
-    let starting_ms = settings.interval.start.timestamp_millis() as u64;
-    let mut sections: Vec<(String, i64, i64, bool, bool)> =
-        vec![(String::from(""), 0, 0, false, false); width];
-
-    let logs: Vec<&Log> = if let Some(title_str) = title {
+) -> Vec<&'a Log> {
+    if let Some(title_str) = title {
         if settings.class_arg.is_empty() {
             if let Some(class) = model.get_class(title_str) {
                 class.iter_logs(&model.logs).collect()
@@ -39,7 +31,21 @@ pub fn timeline(
     } else {
         println!("B");
         Vec::new()
-    };
+    }
+}
+
+pub fn timeline(
+    model: &Model,
+    width: usize,
+    settings: &Settings,
+    title: Option<&String>,
+) -> Vec<(String, i64, i64, bool, bool)> {
+    let ms_per_section = (settings.interval.width() / width as u64) as u64;
+    let starting_ms = settings.interval.start.timestamp_millis() as u64;
+    let mut sections: Vec<(String, i64, i64, bool, bool)> =
+        vec![(String::from(""), 0, 0, false, false); width];
+
+    let logs = get_relevant_logs(model, settings, title);
 
     for log in logs {
         if let Some(end) = log.end {
