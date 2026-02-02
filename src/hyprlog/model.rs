@@ -243,13 +243,8 @@ impl Model {
         self.classes.iter().position(|c| c.class == class)
     }
 
-    pub fn iter_all_logs(&self) -> impl Iterator<Item = &Log> {
-        self.classes.iter().flat_map(|class| {
-            class
-                .titles
-                .iter()
-                .flat_map(|title| title.logs.iter().map(|&log_index| &self.logs[log_index]))
-        })
+    pub fn logs_iter(&self) -> impl Iterator<Item = &Log> {
+        self.logs.iter()
     }
     pub fn get_title(&self, class_name: &String, title_name: &String) -> Option<&Title> {
         if let Some(class) = self.get_class(class_name) {

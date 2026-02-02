@@ -11,7 +11,6 @@ fn get_relevant_logs<'a>(
             if let Some(class) = model.get_class(title_str) {
                 class.iter_logs(&model.logs).collect()
             } else {
-                println!("B");
                 Vec::new()
             }
         } else if let Some(title_obj) = model.get_title(&settings.class_arg, title_str) {
@@ -21,15 +20,13 @@ fn get_relevant_logs<'a>(
                 .map(|&log_index| &model.logs[log_index])
                 .collect()
         } else {
-            println!("A");
             Vec::new()
         }
     } else if settings.class_arg.is_empty() {
-        model.iter_all_logs().collect()
+        model.logs_iter().collect()
     } else if let Some(class) = model.get_class(&settings.class_arg) {
         class.iter_logs(&model.logs).collect()
     } else {
-        println!("B");
         Vec::new()
     }
 }
