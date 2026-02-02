@@ -14,9 +14,8 @@ use crate::log_reader::LogReader;
 use crate::model::{Log, Model};
 use crate::model_building::{build_model, filter_class};
 use crate::stream_client::{StreamClient, StreamEvent};
-use crate::view::{
-    build_class_table, build_title_table, format_short_duration, header, render_log,
-};
+use crate::tables::{build_class_table, build_title_table};
+use crate::view::{format_short_duration, header, render_log};
 use crate::Settings;
 
 pub struct App {

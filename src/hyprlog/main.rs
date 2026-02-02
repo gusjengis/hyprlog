@@ -5,13 +5,13 @@ mod log_reader;
 mod model;
 mod model_building;
 mod stream_client;
+mod tables;
 mod timeline_sections;
 mod tui;
 mod view;
 
 use daemon_commands::send_command;
 use std::env;
-use view::render_log;
 
 use crate::{config::Config, interval::Interval, tui::start_tui};
 
