@@ -52,15 +52,17 @@ pub fn build_class_table(
         };
         total_percentage += percent;
 
-        // Selection styling
         let is_selected = selected_class
             .as_ref()
             .map(|(name, idx)| *idx == *class_index && name == class)
             .unwrap_or(false);
 
-        // Color placeholder for now (since theme/colors aren’t wired in yet)
-        // Later: let color = theme.color_for_class(class);
-        let mut class_style = Style::default().fg(color_from_index(*class_index));
+        let class_has_selection = selected_class.is_some();
+
+        let mut class_style = Style::default();
+        if !class_has_selection {
+            class_style = class_style.fg(color_from_index(*class_index));
+        }
         if is_selected {
             class_style = class_style.add_modifier(Modifier::REVERSED);
         }
@@ -68,7 +70,10 @@ pub fn build_class_table(
         let class_cell = Cell::from(truncate_string(class, max_string_length)).style(class_style);
 
         let dur_cell = {
-            let mut s = Style::default().fg(color_from_index(*class_index));
+            let mut s = Style::default();
+            if !class_has_selection {
+                s = s.fg(color_from_index(*class_index));
+            }
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
@@ -76,7 +81,10 @@ pub fn build_class_table(
         };
 
         let pct_cell = {
-            let mut s = Style::default().fg(color_from_index(*class_index));
+            let mut s = Style::default();
+            if !class_has_selection {
+                s = s.fg(color_from_index(*class_index));
+            }
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
@@ -171,7 +179,12 @@ pub fn build_title_table(
             .map(|(name, idx)| *idx == *title_index && name == title)
             .unwrap_or(false);
 
+        let class_has_selection = selected_class.is_some();
+
         let mut title_style = Style::default();
+        if class_has_selection {
+            title_style = title_style.fg(color_from_index(*title_index));
+        }
         if is_selected {
             title_style = title_style.add_modifier(Modifier::REVERSED);
         }
@@ -180,6 +193,9 @@ pub fn build_title_table(
 
         let dur_cell = {
             let mut s = Style::default();
+            if class_has_selection {
+                s = s.fg(color_from_index(*title_index));
+            }
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
@@ -188,6 +204,9 @@ pub fn build_title_table(
 
         let pct_cell = {
             let mut s = Style::default();
+            if class_has_selection {
+                s = s.fg(color_from_index(*title_index));
+            }
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
