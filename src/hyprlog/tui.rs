@@ -190,10 +190,12 @@ fn update(app: &mut App) {
         app.needs_full_rebuild = false;
     } else if !app.pending_logs.is_empty() {
         for log in app.pending_logs.drain(..) {
-            app.model.add_log(log);
+            app.model.add_log(log, false);
         }
-        app.model.sort();
     }
+
+    app.model.maintain_order(vec![app.model.logs.len() - 1]);
+    // app.model.sort();
 
     if let Some((class, index)) = app.selected_class.as_mut() {
         if let Some(class_index) = app.model.index_of(&class) {
@@ -348,6 +350,7 @@ fn event_loop(app: &mut App) -> Result<()> {
                                 app.selected_title = None;
                             } else if app.selected_class.is_some() {
                                 app.selected_class = None;
+                                app.settings.class_arg = String::from("");
                             }
                         }
                         _ => {}

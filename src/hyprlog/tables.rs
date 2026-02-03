@@ -21,10 +21,6 @@ pub fn build_class_table(
         .map(|(i, c)| (c.class.as_str(), c.total_duration(&model.logs), i))
         .collect();
 
-    // If you want to enforce the same cutoff semantics as before,
-    // you can keep sorting here (or assume model.sort() already did it).
-    // rows.sort_by(|a, b| b.1.cmp(&a.1)); // optional
-
     let total: u64 = rows.iter().map(|(_, dur, _)| *dur).sum();
 
     let mut max_class_width = rows
@@ -127,35 +123,48 @@ pub fn build_title_table(
     selected_class: &Option<(String, usize)>,
     selected_title: &Option<(String, usize)>,
 ) -> Table<'static> {
-    // Pick the class we’re showing titles for.
-    // If none selected, show nothing (just Total=0).
     let class_opt: Option<&Class> = selected_class
         .as_ref()
         .and_then(|(_name, idx)| model.classes.get(*idx));
 
-    // Build rows: (title, duration, title_index)
-    let mut rows: Vec<(&str, u64, usize)> = match class_opt {
+    let mut rows: Vec<(&str, u64, usize, usize)> = match class_opt {
         Some(class) => class
             .titles
             .iter()
             .enumerate()
-            .map(|(i, t)| (t.title.as_str(), t.total_duration(&model.logs), i))
+            .map(|(i, t)| (t.title.as_str(), t.total_duration(&model.logs), i, 0))
             .collect(),
-        None => Vec::new(),
+        None => model
+            .classes
+            .iter()
+            .enumerate()
+            .flat_map(|(class_idx, class)| {
+                class
+                    .titles
+                    .iter()
+                    .enumerate()
+                    .map(move |(title_idx, title)| {
+                        (
+                            title.title.as_str(),
+                            title.total_duration(&model.logs),
+                            title_idx,
+                            class_idx,
+                        )
+                    })
+            })
+            .collect(),
     };
 
-    // Optional: if you want local sorting independent of model.sort()
-    // rows.sort_by(|a, b| b.1.cmp(&a.1));
+    let rows = rows.into_iter().take(CUTOFF).collect::<Vec<_>>();
 
-    let total: u64 = rows.iter().map(|(_, dur, _)| *dur).sum();
+    let total: u64 = rows.iter().map(|(_, dur, _, _)| *dur).sum();
 
     let mut max_title_width = rows
         .iter()
-        .map(|(title, _, _)| title.len())
+        .map(|(title, _, _, _)| title.len())
         .max()
         .unwrap_or(0);
 
-    // Cap by terminal width so it doesn't explode.
     let max_string_length = terminal_width().saturating_sub(20);
     max_title_width = max_title_width.min(max_string_length);
 
@@ -163,7 +172,7 @@ pub fn build_title_table(
     let mut total_percentage = 0.0;
     let mut total_duration: u64 = 0;
 
-    for (title, duration, title_index) in rows.iter().take(CUTOFF) {
+    for (title, duration, title_index, class_index) in rows.iter() {
         total_duration += *duration;
 
         let percent = if total == 0 {
@@ -184,6 +193,8 @@ pub fn build_title_table(
         let mut title_style = Style::default();
         if class_has_selection {
             title_style = title_style.fg(color_from_index(*title_index));
+        } else {
+            title_style = title_style.fg(color_from_index(*class_index));
         }
         if is_selected {
             title_style = title_style.add_modifier(Modifier::REVERSED);
@@ -195,6 +206,8 @@ pub fn build_title_table(
             let mut s = Style::default();
             if class_has_selection {
                 s = s.fg(color_from_index(*title_index));
+            } else {
+                title_style = title_style.fg(color_from_index(*class_index));
             }
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
@@ -206,6 +219,8 @@ pub fn build_title_table(
             let mut s = Style::default();
             if class_has_selection {
                 s = s.fg(color_from_index(*title_index));
+            } else {
+                title_style = title_style.fg(color_from_index(*class_index));
             }
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);

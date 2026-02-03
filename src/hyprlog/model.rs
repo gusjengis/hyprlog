@@ -46,10 +46,6 @@ impl Title {
         self.total_duration = self.total_duration + log_duration;
     }
 
-    pub fn update_log_duration(&mut self, duration: u64) {
-        self.total_duration += duration;
-    }
-
     pub fn total_duration(&self, logs: &Vec<Log>) -> u64 {
         let mut duration = self.total_duration;
         if let Some(last_index) = self.logs.last() {
@@ -63,6 +59,10 @@ impl Title {
 
     fn add_duration(&mut self, duration: u64) {
         self.total_duration += duration;
+    }
+
+    fn class<'a>(&self, logs: &'a Vec<Log>) -> &'a String {
+        &logs[*self.logs.first().unwrap()].class
     }
 }
 
@@ -158,7 +158,8 @@ impl Model {
         }
     }
 
-    pub fn add_log(&mut self, log: Log) {
+    pub fn add_log(&mut self, log: Log, bulk_addition: bool) {
+        let mut changed_log_indices = vec![];
         if let Some(last_log) = self.logs.last_mut() {
             if last_log.end.is_none() {
                 last_log.end = Some(log.start);
@@ -169,6 +170,7 @@ impl Model {
             self.get_class_mut(class_string)
                 .get_title_mut(title_string)
                 .add_duration(duration);
+            changed_log_indices.push(self.logs.len() - 1);
         }
         let class_string = log.class.clone();
         let title_string = log.title.clone();
@@ -183,21 +185,10 @@ impl Model {
         self.get_class_mut(class_string)
             .get_title_mut(title_string)
             .add_log(log_index, log_duration);
-    }
-
-    pub fn complete_log(&mut self, replacement_log: Log) {
-        let class_string = replacement_log.class.clone();
-        let title_string = replacement_log.title.clone();
-
-        // calculate new duration
-        let newest_log = self.logs.last_mut().unwrap();
-        let duration = replacement_log.duration();
-        // Replace old log
-        *newest_log = replacement_log;
-        // Update total duration
-        self.get_class_mut(class_string)
-            .get_title_mut(title_string)
-            .update_log_duration(duration);
+        changed_log_indices.push(log_index);
+        if (!bulk_addition) {
+            self.maintain_order(changed_log_indices);
+        }
     }
 
     pub fn total_duration(&self) -> u64 {
@@ -251,6 +242,78 @@ impl Model {
             class.get_title(title_name)
         } else {
             None
+        }
+    }
+
+    pub fn maintain_order(&mut self, changed_log_indices: Vec<usize>) {
+        use std::collections::HashSet;
+
+        let mut changed_class_indices: HashSet<usize> = HashSet::new();
+        for &log_idx in &changed_log_indices {
+            if log_idx < self.logs.len() {
+                let log = &self.logs[log_idx];
+                if let Some(&class_idx) = self.class_map.get(&log.class) {
+                    changed_class_indices.insert(class_idx);
+                }
+            }
+        }
+
+        for class_idx in changed_class_indices.clone() {
+            if class_idx >= self.classes.len() {
+                continue;
+            }
+
+            let class = &mut self.classes[class_idx];
+            let mut i = 0;
+            while i < class.titles.len() {
+                let title_duration = class.titles[i].total_duration(&self.logs);
+                if i > 0 {
+                    let prev_duration = class.titles[i - 1].total_duration(&self.logs);
+                    if title_duration > prev_duration {
+                        class.titles.swap(i, i - 1);
+                        let prev_title_name = class.titles[i].title.clone();
+                        class.title_map.insert(prev_title_name, i);
+                        let curr_title_name = class.titles[i - 1].title.clone();
+                        class.title_map.insert(curr_title_name, i - 1);
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+        }
+
+        let mut changed_class_indices: Vec<_> = changed_class_indices.into_iter().collect();
+        changed_class_indices.sort();
+        let mut i = 0;
+        while i < changed_class_indices.len() {
+            let class_idx = changed_class_indices[i];
+            if class_idx >= self.classes.len() {
+                i += 1;
+                continue;
+            }
+
+            let class = &self.classes[class_idx];
+            let class_duration = class.total_duration(&self.logs);
+
+            if class_idx > 0 {
+                let prev_class = &self.classes[class_idx - 1];
+                let prev_duration = prev_class.total_duration(&self.logs);
+                if class_duration > prev_duration {
+                    self.classes.swap(class_idx, class_idx - 1);
+
+                    let class_name = self.classes[class_idx].class.clone();
+                    self.class_map.insert(class_name, class_idx);
+                    let prev_class_name = self.classes[class_idx - 1].class.clone();
+                    self.class_map.insert(prev_class_name, class_idx - 1);
+
+                    if !changed_class_indices.contains(&(class_idx - 1)) {
+                        changed_class_indices.push(class_idx - 1);
+                        changed_class_indices.sort();
+                    }
+                    continue;
+                }
+            }
+            i += 1;
         }
     }
 }

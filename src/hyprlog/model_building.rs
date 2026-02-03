@@ -39,12 +39,10 @@ pub fn build_model(
                     if let (Some(start), Some(class), Some(title)) =
                         (last_timestamp, last_class.as_ref(), last_title.as_ref())
                     {
-                        model.add_log(Log::new(
-                            start,
-                            Some(timestamp),
-                            class.clone(),
-                            title.clone(),
-                        ));
+                        model.add_log(
+                            Log::new(start, Some(timestamp), class.clone(), title.clone()),
+                            true,
+                        );
                     }
                     last_timestamp = None;
                 }
@@ -54,12 +52,10 @@ pub fn build_model(
             if let (Some(start), Some(class), Some(title)) =
                 (last_timestamp, last_class.as_ref(), last_title.as_ref())
             {
-                model.add_log(Log::new(
-                    start,
-                    Some(timestamp),
-                    class.clone(),
-                    title.clone(),
-                ));
+                model.add_log(
+                    Log::new(start, Some(timestamp), class.clone(), title.clone()),
+                    true,
+                );
             }
 
             last_timestamp = Some(timestamp);
@@ -70,7 +66,7 @@ pub fn build_model(
     if let (Some(start), Some(class), Some(title)) =
         (last_timestamp, last_class.as_ref(), last_title.as_ref())
     {
-        model.add_log(Log::new(start, None, class.clone(), title.clone()));
+        model.add_log(Log::new(start, None, class.clone(), title.clone()), true);
     }
     model.sort();
 

@@ -203,9 +203,10 @@ pub fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else if max_len > 3 {
-        format!("{}...", &s[..max_len - 3])
+        let cut_point = s.floor_char_boundary(max_len - 3);
+        format!("{}...", &s[..cut_point])
     } else {
-        ".".repeat(max_len) // handles silly small max_len
+        ".".repeat(max_len)
     }
 }
 
