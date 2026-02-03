@@ -155,6 +155,7 @@ pub fn build_title_table(
             .collect(),
     };
 
+    rows.sort_by(|a, b| b.1.cmp(&a.1));
     let rows = rows.into_iter().take(CUTOFF).collect::<Vec<_>>();
 
     let total: u64 = rows.iter().map(|(_, dur, _, _)| *dur).sum();
