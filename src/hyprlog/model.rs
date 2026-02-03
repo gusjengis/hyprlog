@@ -70,6 +70,7 @@ pub struct Class {
     pub class: String,
     pub titles: Vec<Title>,
     title_map: HashMap<String, usize>,
+    pub logs: Vec<usize>,
 }
 
 impl Class {
@@ -78,6 +79,7 @@ impl Class {
             class,
             titles: Vec::new(),
             title_map: HashMap::new(),
+            logs: Vec::new(),
         }
     }
 
@@ -111,6 +113,8 @@ impl Class {
         for (i, title) in self.titles.iter().enumerate() {
             self.title_map.insert(title.title.clone(), i);
         }
+        self.logs
+            .sort_by(|a, b| logs[*a].start.cmp(&logs[*b].start));
     }
 
     pub fn index_of(&self, title: &str) -> Option<usize> {
@@ -118,9 +122,13 @@ impl Class {
     }
 
     pub fn iter_logs<'a>(&'a self, logs: &'a Vec<Log>) -> impl Iterator<Item = &Log> + 'a {
-        self.titles
-            .iter()
-            .flat_map(move |title| title.logs.iter().map(move |&log_index| &logs[log_index]))
+        self.logs.iter().map(move |&log_index| &logs[log_index])
+    }
+
+    fn add_log(&mut self, log_index: usize, title_string: String, log_duration: u64) {
+        self.logs.push(log_index);
+        self.get_title_mut(title_string)
+            .add_log(log_index, log_duration);
     }
 }
 
@@ -183,8 +191,7 @@ impl Model {
         let log_index = self.logs.len() - 1;
 
         self.get_class_mut(class_string)
-            .get_title_mut(title_string)
-            .add_log(log_index, log_duration);
+            .add_log(log_index, title_string, log_duration);
         changed_log_indices.push(log_index);
         if (!bulk_addition) {
             self.maintain_order(changed_log_indices);
