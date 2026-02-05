@@ -141,40 +141,40 @@ pub fn build_title_table(
             .enumerate()
             .map(|(i, t)| (t.title.as_str(), t.total_duration(&model.logs), i, 0))
             .collect(),
-        // None => model
-        //     .classes
-        //     .iter()
-        //     .enumerate()
-        //     .flat_map(|(class_idx, class)| {
-        //         class
-        //             .titles
-        //             .iter()
-        //             .enumerate()
-        //             .map(move |(title_idx, title)| {
-        //                 (
-        //                     title.title.as_str(),
-        //                     title.total_duration(&model.logs),
-        //                     title_idx,
-        //                     class_idx,
-        //                 )
-        //             })
-        //     })
-        //     .collect(),
         None => model
-            .titles
+            .classes
             .iter()
-            .map(|(class_idx, title_idx)| {
-                (
-                    model.classes[*class_idx].titles[*title_idx].title.as_str(),
-                    model.classes[*class_idx].titles[*title_idx].total_duration(&model.logs),
-                    *title_idx,
-                    *class_idx,
-                )
+            .enumerate()
+            .flat_map(|(class_idx, class)| {
+                class
+                    .titles
+                    .iter()
+                    .enumerate()
+                    .map(move |(title_idx, title)| {
+                        (
+                            title.title.as_str(),
+                            title.total_duration(&model.logs),
+                            title_idx,
+                            class_idx,
+                        )
+                    })
             })
             .collect(),
+        // None => model
+        //     .titles
+        //     .iter()
+        //     .map(|(class_idx, title_idx)| {
+        //         (
+        //             model.classes[*class_idx].titles[*title_idx].title.as_str(),
+        //             model.classes[*class_idx].titles[*title_idx].total_duration(&model.logs),
+        //             *title_idx,
+        //             *class_idx,
+        //         )
+        //     })
+        //     .collect(),
     };
 
-    // rows.sort_by(|a, b| b.1.cmp(&a.1));
+    rows.sort_by(|a, b| b.1.cmp(&a.1));
     // let rows = rows.into_iter().take(CUTOFF).collect::<Vec<_>>();
 
     let total: u64 = rows.iter().map(|(_, dur, _, _)| *dur).sum();
