@@ -350,6 +350,8 @@ fn event_loop(app: &mut App) -> Result<()> {
                                 }
                             }
                         }
+                        KeyCode::Left => {}
+                        KeyCode::Right => {}
                         KeyCode::Esc => {
                             if app.selected_title.is_some() {
                                 app.selected_title = None;

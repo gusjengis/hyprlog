@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local, NaiveTime, TimeDelta, TimeZone, Utc};
+use chrono::{DateTime, Days, Local, NaiveTime, TimeDelta, TimeZone, Utc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interval {
@@ -64,6 +64,21 @@ impl Interval {
         };
 
         ts >= self.start && ts < self.end
+    }
+
+    pub fn pan_days(&mut self, days: u64, forward: bool) {
+        let offset = Days::new(days);
+        // let upper_bound =
+        let today = Local::now().date_naive();
+        let tomorrow = today + TimeDelta::days(1);
+        local_midnight_to_utc(tomorrow);
+        if forward {
+            self.start = self.start + offset;
+            self.end = self.end + offset;
+        } else {
+            self.start = self.start - offset;
+            self.end = self.end - offset;
+        }
     }
 }
 
