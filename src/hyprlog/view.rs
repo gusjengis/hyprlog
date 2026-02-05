@@ -1,14 +1,10 @@
-use crate::model::{Class, Model};
+use crate::model::Model;
 use crate::timeline_sections::timeline;
 use crate::Settings;
-use std::time::Duration;
-// use colored::{Color, Colorize};
-use ratatui::layout::Constraint;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 use std::collections::HashMap;
-use std::fmt::Write;
+use std::time::Duration;
 use terminal_size::Width;
 
 pub fn render_log(model: &Model, settings: &Settings) -> Option<Text<'static>> {

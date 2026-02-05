@@ -44,7 +44,7 @@ impl StreamClient {
         let force_render = Arc::new(AtomicBool::new(false));
         let client_id = Uuid::new_v4();
         let state_clone = Arc::clone(&state);
-        let force_render_clone = Arc::clone(&force_render);
+        // let force_render_clone = Arc::clone(&force_render);
 
         let join_handle = thread::spawn(move || {
             let rt = Runtime::new().unwrap();

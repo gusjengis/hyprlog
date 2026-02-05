@@ -7,7 +7,7 @@ use std::{
         Arc, Mutex,
     },
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 

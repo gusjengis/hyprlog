@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use crate::view::format_duration;
-
 pub struct Log {
     pub start: u64,
     pub end: Option<u64>,
@@ -136,6 +134,7 @@ pub struct Model {
     pub classes: Vec<Class>,
     class_map: HashMap<String, usize>,
     pub logs: Vec<Log>,
+    pub titles: Vec<(usize, usize)>,
 }
 
 impl Model {
@@ -144,6 +143,7 @@ impl Model {
             classes: Vec::new(),
             class_map: HashMap::new(),
             logs: Vec::new(),
+            titles: Vec::new(),
         }
     }
 
@@ -193,16 +193,9 @@ impl Model {
         self.get_class_mut(class_string)
             .add_log(log_index, title_string, log_duration);
         changed_log_indices.push(log_index);
-        if (!bulk_addition) {
+        if !bulk_addition {
             self.maintain_order(changed_log_indices);
         }
-    }
-
-    pub fn total_duration(&self) -> u64 {
-        self.classes
-            .iter()
-            .map(|c| c.total_duration(&self.logs))
-            .sum()
     }
 
     pub fn sort(&mut self) {
@@ -217,25 +210,40 @@ impl Model {
         for class in self.classes.iter_mut() {
             class.sort(&self.logs);
         }
+
+        self.build_titles();
+        self.titles.sort_by(|b, a| {
+            self.classes[a.0].titles[a.1]
+                .total_duration(&self.logs)
+                .cmp(&self.classes[b.0].titles[b.1].total_duration(&self.logs))
+        });
     }
 
-    pub fn print(&self) {
-        for class in self.classes.iter() {
-            println!(
-                "{}: {}",
-                class.class,
-                format_duration(class.total_duration(&self.logs))
-            );
-            for title in class.titles.iter() {
-                println!(
-                    "  {}: {}",
-                    title.title,
-                    format_duration(title.total_duration)
-                );
+    fn build_titles(&mut self) {
+        for (i, class) in self.classes.iter().enumerate() {
+            for (j, _) in class.titles.iter().enumerate() {
+                self.titles.push((i, j));
             }
         }
-        println!("Total: {}", format_duration(self.total_duration()));
     }
+
+    // pub fn print(&self) {
+    //     for class in self.classes.iter() {
+    //         println!(
+    //             "{}: {}",
+    //             class.class,
+    //             format_duration(class.total_duration(&self.logs))
+    //         );
+    //         for title in class.titles.iter() {
+    //             println!(
+    //                 "  {}: {}",
+    //                 title.title,
+    //                 format_duration(title.total_duration)
+    //             );
+    //         }
+    //     }
+    //     println!("Total: {}", format_duration(self.total_duration()));
+    // }
 
     pub fn index_of(&self, class: &str) -> Option<usize> {
         self.classes.iter().position(|c| c.class == class)

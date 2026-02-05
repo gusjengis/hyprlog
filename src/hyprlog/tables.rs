@@ -14,7 +14,7 @@ pub fn build_class_table(
     selected_class: &Option<(String, usize)>,
     width: u16,
 ) -> Table<'static> {
-    let mut rows: Vec<(&str, u64, usize)> = model
+    let rows: Vec<(&str, u64, usize)> = model
         .classes
         .iter()
         .enumerate()
@@ -23,15 +23,16 @@ pub fn build_class_table(
 
     let total: u64 = rows.iter().map(|(_, dur, _)| *dur).sum();
 
-    let mut max_class_width = rows
-        .iter()
-        .map(|(class, _, _)| class.len())
-        .max()
-        .unwrap_or(0);
+    // let mut max_class_width = rows
+    //     .iter()
+    //     .map(|(class, _, _)| class.len())
+    //     .max()
+    //     .unwrap_or(0);
 
     // Cap by terminal width so it doesn't explode.
     let max_string_length = terminal_width().saturating_sub(20);
-    max_class_width = max_class_width.min(max_string_length);
+    let mut max_duration_width = 0;
+    // max_class_width = max_class_width.min(max_string_length);
 
     let mut table_rows: Vec<Row<'static>> = Vec::new();
     let mut total_percentage = 0.0;
@@ -73,7 +74,12 @@ pub fn build_class_table(
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
-            Cell::from(format_duration(*duration)).style(s)
+            let duration_string = format_duration(*duration);
+            if duration_string.len() > max_duration_width {
+                max_duration_width = duration_string.len();
+            }
+
+            Cell::from(duration_string).style(s)
         };
 
         let pct_cell = {
@@ -105,7 +111,7 @@ pub fn build_class_table(
 
     let widths = [
         Constraint::Length(width as u16 - 20),
-        Constraint::Length(11),
+        Constraint::Length(max_duration_width as u16),
         Constraint::Length(9),
     ];
 
@@ -134,29 +140,41 @@ pub fn build_title_table(
             .enumerate()
             .map(|(i, t)| (t.title.as_str(), t.total_duration(&model.logs), i, 0))
             .collect(),
+        // None => model
+        //     .classes
+        //     .iter()
+        //     .enumerate()
+        //     .flat_map(|(class_idx, class)| {
+        //         class
+        //             .titles
+        //             .iter()
+        //             .enumerate()
+        //             .map(move |(title_idx, title)| {
+        //                 (
+        //                     title.title.as_str(),
+        //                     title.total_duration(&model.logs),
+        //                     title_idx,
+        //                     class_idx,
+        //                 )
+        //             })
+        //     })
+        //     .collect(),
         None => model
-            .classes
+            .titles
             .iter()
-            .enumerate()
-            .flat_map(|(class_idx, class)| {
-                class
-                    .titles
-                    .iter()
-                    .enumerate()
-                    .map(move |(title_idx, title)| {
-                        (
-                            title.title.as_str(),
-                            title.total_duration(&model.logs),
-                            title_idx,
-                            class_idx,
-                        )
-                    })
+            .map(|(class_idx, title_idx)| {
+                (
+                    model.classes[*class_idx].titles[*title_idx].title.as_str(),
+                    model.classes[*class_idx].titles[*title_idx].total_duration(&model.logs),
+                    *class_idx,
+                    *title_idx,
+                )
             })
             .collect(),
     };
 
-    rows.sort_by(|a, b| b.1.cmp(&a.1));
-    let rows = rows.into_iter().take(CUTOFF).collect::<Vec<_>>();
+    // rows.sort_by(|a, b| b.1.cmp(&a.1));
+    // let rows = rows.into_iter().take(CUTOFF).collect::<Vec<_>>();
 
     let total: u64 = rows.iter().map(|(_, dur, _, _)| *dur).sum();
 
@@ -168,6 +186,7 @@ pub fn build_title_table(
 
     let max_string_length = terminal_width().saturating_sub(20);
     max_title_width = max_title_width.min(max_string_length);
+    let mut max_duration_width = 0;
 
     let mut table_rows: Vec<Row<'static>> = Vec::new();
     let mut total_percentage = 0.0;
@@ -213,7 +232,12 @@ pub fn build_title_table(
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
-            Cell::from(format_duration(*duration)).style(s)
+            let duration_string = format_duration(*duration);
+            if duration_string.len() > max_duration_width {
+                max_duration_width = duration_string.len();
+            }
+
+            Cell::from(duration_string).style(s)
         };
 
         let pct_cell = {
@@ -247,7 +271,7 @@ pub fn build_title_table(
 
     let widths = [
         Constraint::Length(max_title_width as u16),
-        Constraint::Length(10),
+        Constraint::Length(max_duration_width as u16),
         Constraint::Length(9),
     ];
 

@@ -316,14 +316,14 @@ fn event_loop(app: &mut App) -> Result<()> {
                             } else if let Some((class, index)) = app.selected_class.as_mut() {
                                 if let Some((title, index)) = app.selected_title.as_mut() {
                                     if *index > 0 {
-                                        *index = (*index - 1);
+                                        *index = *index - 1;
                                         *title = app.model.get_class_mut(class.clone()).titles
                                             [*index]
                                             .title
                                             .clone();
                                     }
                                 } else if *index > 0 {
-                                    *index = (*index - 1);
+                                    *index = *index - 1;
                                     *class = app.model.classes[*index].class.clone();
                                 }
                             }
