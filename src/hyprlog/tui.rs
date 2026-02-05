@@ -279,7 +279,12 @@ fn render(frame: &mut Frame, app: &mut App) {
     let class_table = build_class_table(&app.model, &app.selected_class, table_cols[0].width);
     app.classes_time = classes_start.elapsed();
     let titles_start = Instant::now();
-    let title_table = build_title_table(&app.model, &app.selected_class, &app.selected_title);
+    let title_table = build_title_table(
+        &app.model,
+        &app.selected_class,
+        &app.selected_title,
+        table_cols[0].width,
+    );
     app.titles_time = titles_start.elapsed();
     frame.render_widget(class_table, table_cols[0]);
     draw_inner_border(frame, table_cols[1], Style::default());

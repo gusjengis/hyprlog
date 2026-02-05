@@ -31,7 +31,7 @@ pub fn build_class_table(
 
     // Cap by terminal width so it doesn't explode.
     let max_string_length = terminal_width().saturating_sub(20);
-    let mut max_duration_width = 0;
+    let mut max_duration_width = "Duration".len();
     // max_class_width = max_class_width.min(max_string_length);
 
     let mut table_rows: Vec<Row<'static>> = Vec::new();
@@ -110,14 +110,14 @@ pub fn build_class_table(
     );
 
     let widths = [
-        Constraint::Length(width as u16 - 20),
+        Constraint::Length(width as u16 - (max_duration_width + 9) as u16),
         Constraint::Length(max_duration_width as u16),
         Constraint::Length(9),
     ];
 
     Table::new(table_rows, widths)
         .header(
-            Row::new(vec!["Class", "Duration", "Percent"])
+            Row::new(vec!["Class", "Duration", " Percent"])
                 .style(Style::default().add_modifier(Modifier::BOLD)),
         )
         .block(Block::default().borders(Borders::BOTTOM | Borders::LEFT))
@@ -128,6 +128,7 @@ pub fn build_title_table(
     model: &Model,
     selected_class: &Option<(String, usize)>,
     selected_title: &Option<(String, usize)>,
+    width: u16,
 ) -> Table<'static> {
     let class_opt: Option<&Class> = selected_class
         .as_ref()
@@ -166,8 +167,8 @@ pub fn build_title_table(
                 (
                     model.classes[*class_idx].titles[*title_idx].title.as_str(),
                     model.classes[*class_idx].titles[*title_idx].total_duration(&model.logs),
-                    *class_idx,
                     *title_idx,
+                    *class_idx,
                 )
             })
             .collect(),
@@ -186,7 +187,7 @@ pub fn build_title_table(
 
     let max_string_length = terminal_width().saturating_sub(20);
     max_title_width = max_title_width.min(max_string_length);
-    let mut max_duration_width = 0;
+    let mut max_duration_width = "Duration".len();
 
     let mut table_rows: Vec<Row<'static>> = Vec::new();
     let mut total_percentage = 0.0;
@@ -270,14 +271,14 @@ pub fn build_title_table(
     );
 
     let widths = [
-        Constraint::Length(max_title_width as u16),
+        Constraint::Length(width as u16 - (max_duration_width + 9) as u16),
         Constraint::Length(max_duration_width as u16),
         Constraint::Length(9),
     ];
 
     Table::new(table_rows, widths)
         .header(
-            Row::new(vec!["Title", "Duration", "Percent"])
+            Row::new(vec!["Title", "Duration", " Percent"])
                 .style(Style::default().add_modifier(Modifier::BOLD)),
         )
         .block(Block::default().borders(Borders::BOTTOM | Borders::RIGHT))
