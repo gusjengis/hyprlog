@@ -1,5 +1,5 @@
 use crate::model::Model;
-use crate::timeline_sections::timeline;
+use crate::timeline_sections::{timeline, TimelineCharacter};
 use crate::Settings;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -100,11 +100,11 @@ fn build_timeline(
 
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(sections.len());
 
-    for section_data in sections {
+    for section_data in sections.iter() {
         let key = if settings.multi_timeline {
             label.expect("label required when multi_timeline")
         } else {
-            &section_data.0
+            &section_data.label
         };
 
         if let Some(color) = colors.get(key) {
@@ -144,15 +144,15 @@ fn build_timeline(
     Line::from(spans)
 }
 
-fn choose_character(section_data: (String, i64, i64, bool, bool), settings: &Settings) -> char {
+fn choose_character(section_data: &TimelineCharacter, settings: &Settings) -> char {
     let width = terminal_width();
     let ms_per_section = (settings.focused_interval.width() / (width as u64)) as f64;
-    let fullness = section_data.2 as f64 / ms_per_section as f64;
+    let fullness = section_data.total as f64 / ms_per_section as f64;
     if FANCY_TIMELINE {
-        if section_data.3 && section_data.4 {
+        if section_data.activity_at_left_edge && section_data.activity_at_right_edge {
             // there is activity near both the left and right side of a section
             return '█';
-        } else if section_data.3 {
+        } else if section_data.activity_at_left_edge {
             // there is activity near the left side of a section
             return match fullness {
                 f64::MIN..=0.00 => ' ',
@@ -165,7 +165,7 @@ fn choose_character(section_data: (String, i64, i64, bool, bool), settings: &Set
                 0.75..=f64::MAX => '█',
                 _ => '—',
             };
-        } else if section_data.4 {
+        } else if section_data.activity_at_right_edge {
             // there is activity near the right side of a section
             return match fullness {
                 f64::MIN..=0.00 => ' ',

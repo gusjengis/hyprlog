@@ -1,6 +1,27 @@
 use crate::model::Log;
 use crate::{model::Model, Settings};
 
+#[derive(Clone)]
+pub struct TimelineCharacter {
+    pub label: String,
+    pub dominant: i64,
+    pub total: i64,
+    pub activity_at_left_edge: bool,
+    pub activity_at_right_edge: bool,
+}
+
+impl Default for TimelineCharacter {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            dominant: 0,
+            total: 0,
+            activity_at_left_edge: false,
+            activity_at_right_edge: false,
+        }
+    }
+}
+
 fn get_relevant_logs<'a>(
     model: &'a Model,
     settings: &'a Settings,
@@ -36,11 +57,10 @@ pub fn timeline(
     width: usize,
     settings: &Settings,
     title: Option<&String>,
-) -> Vec<(String, i64, i64, bool, bool)> {
+) -> Vec<TimelineCharacter> {
     let ms_per_section = (settings.focused_interval.width() / width as u64) as u64;
     let starting_ms = settings.focused_interval.start.timestamp_millis() as u64;
-    let mut sections: Vec<(String, i64, i64, bool, bool)> =
-        vec![(String::from(""), 0, 0, false, false); width];
+    let mut sections: Vec<TimelineCharacter> = vec![TimelineCharacter::default(); width];
 
     let logs = get_relevant_logs(model, settings, title);
 
@@ -91,7 +111,7 @@ fn assign_interval_to_section(
     ms_per_section: u64,
     settings: &Settings,
     label: Option<&String>,
-    sections: &mut Vec<(String, i64, i64, bool, bool)>,
+    sections: &mut Vec<TimelineCharacter>,
 ) {
     if settings.multi_timeline && (label.unwrap() == &key(settings, class_name, title))
         || !settings.multi_timeline
@@ -105,20 +125,20 @@ fn assign_interval_to_section(
             let section_end = starting_ms + ms_per_section * (i as u64 + 1);
             let contribution = (section_end.min(end) - section_start.max(start)) as i64;
             if section_start + edge_detection_padding >= start {
-                sections[i].3 = true;
+                sections[i].activity_at_left_edge = true;
             }
             if section_end - edge_detection_padding <= end {
-                sections[i].4 = true;
+                sections[i].activity_at_right_edge = true;
             }
             let key = key(settings, class_name, title);
-            sections[i].2 += contribution;
-            if sections[i].0 == key {
-                sections[i].1 += contribution;
+            sections[i].total += contribution;
+            if sections[i].label == key {
+                sections[i].dominant += contribution;
             } else {
-                sections[i].1 -= contribution;
-                if sections[i].1 < 0 {
-                    sections[i].0 = key.clone();
-                    sections[i].1 *= -1;
+                sections[i].dominant -= contribution;
+                if sections[i].dominant < 0 {
+                    sections[i].label = key.clone();
+                    sections[i].dominant *= -1;
                 }
             }
         }
