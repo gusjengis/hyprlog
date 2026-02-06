@@ -7,22 +7,22 @@ use std::collections::HashMap;
 use std::time::Duration;
 use terminal_size::Width;
 
-pub fn render_log(model: &Model, settings: &Settings) -> Option<Text<'static>> {
+pub fn render_log(model: &Model, settings: &Settings) -> Result<Text<'static>, String> {
     let labels = get_labels(model, settings);
 
     if labels.is_empty() {
         let message = if settings.class_arg.is_empty() {
-            "Empty log.".to_string()
+            "Empty log".to_string()
         } else {
-            format!("Class \"{}\" not found in log.", &settings.class_arg)
+            format!("Class \"{}\" not found in log", &settings.class_arg)
         };
-        return Some(Text::from(Line::from(message)));
+        return Err(message);
     }
 
     let colors = key_to_color_map(&labels);
     let timelines = render_timelines(model, &colors, labels, settings);
 
-    return Some(timelines);
+    Ok(timelines)
 }
 
 pub fn header(settings: &Settings) -> String {

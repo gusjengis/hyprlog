@@ -4,9 +4,9 @@ use std::time::{Duration, Instant};
 use color_eyre::eyre::Context;
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
@@ -246,10 +246,12 @@ fn update(app: &mut App) {
 
 fn render(frame: &mut Frame, app: &mut App) {
     let timeline_start = Instant::now();
-    let Some(timelines_text) = render_log(&app.model, &app.settings) else {
-        let msg = Paragraph::new("No log data for this interval. (press 'q' to quit)");
-        frame.render_widget(msg, frame.area());
-        return;
+    let (timelines_text, center_timeline) = match render_log(&app.model, &app.settings) {
+        Ok(text) => (text, false),
+        Err(message) => {
+            let empty_text: Text<'static> = Text::from(Line::from(message));
+            (empty_text, true)
+        }
     };
     app.timeline_time = timeline_start.elapsed();
 
@@ -263,10 +265,11 @@ fn render(frame: &mut Frame, app: &mut App) {
         ])
         .split(frame.area());
 
-    frame.render_widget(
-        Paragraph::new(timelines_text).wrap(Wrap { trim: false }),
-        chunks[0],
-    );
+    let mut timeline_paragraph = Paragraph::new(timelines_text).wrap(Wrap { trim: false });
+    if center_timeline {
+        timeline_paragraph = timeline_paragraph.alignment(Alignment::Center);
+    }
+    frame.render_widget(timeline_paragraph, chunks[0]);
 
     frame.render_widget(Paragraph::new(header(&app.settings)), chunks[1]);
 
