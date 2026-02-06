@@ -118,16 +118,24 @@ fn assign_interval_to_section(
             && (settings.class_arg == "" || settings.full || &settings.class_arg == class_name)
     {
         let edge_detection_padding = (ms_per_section as f64 / 10.0) as u64;
-        let start_index = section_index(starting_ms, ms_per_section, start);
-        let end_index = section_index(starting_ms, ms_per_section, end);
+        let interval_end = starting_ms + ms_per_section * sections.len() as u64;
+        let clamped_start = start.max(starting_ms);
+        let clamped_end = end.min(interval_end);
+        if clamped_end <= clamped_start {
+            return;
+        }
+        let max_index = sections.len().saturating_sub(1);
+        let start_index = section_index(starting_ms, ms_per_section, clamped_start).min(max_index);
+        let end_index = section_index(starting_ms, ms_per_section, clamped_end - 1).min(max_index);
         for i in start_index..end_index + 1 {
             let section_start = starting_ms + ms_per_section * i as u64;
             let section_end = starting_ms + ms_per_section * (i as u64 + 1);
-            let contribution = (section_end.min(end) - section_start.max(start)) as i64;
-            if section_start + edge_detection_padding >= start {
+            let contribution =
+                (section_end.min(clamped_end) - section_start.max(clamped_start)) as i64;
+            if section_start + edge_detection_padding >= clamped_start {
                 sections[i].activity_at_left_edge = true;
             }
-            if section_end - edge_detection_padding <= end {
+            if section_end - edge_detection_padding <= clamped_end {
                 sections[i].activity_at_right_edge = true;
             }
             let key = key(settings, class_name, title);
