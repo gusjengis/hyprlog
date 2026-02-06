@@ -19,6 +19,12 @@ pub fn build_model(
     for row in log_reader {
         let record = row.unwrap();
         let timestamp: u64 = (record[0].parse::<i64>()?) as u64;
+        if settings
+            .loaded_interval
+            .contains_utc_timestamp_millis(timestamp)
+        {
+            continue;
+        }
         let mut class = record[1].to_string();
         let title = record[2].to_string();
 

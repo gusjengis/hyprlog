@@ -27,7 +27,7 @@ pub fn render_log(model: &Model, settings: &Settings) -> Option<Text<'static>> {
 
 pub fn header(settings: &Settings) -> String {
     let mut res = String::from("");
-    let date_str = settings.interval.date_str();
+    let date_str = settings.focused_interval.date_str();
     let term_width = terminal_width();
 
     let inner_width = date_str.len() + 2;
@@ -146,7 +146,7 @@ fn build_timeline(
 
 fn choose_character(section_data: (String, i64, i64, bool, bool), settings: &Settings) -> char {
     let width = terminal_width();
-    let ms_per_section = (settings.interval.width() / (width as u64)) as f64;
+    let ms_per_section = (settings.focused_interval.width() / (width as u64)) as f64;
     let fullness = section_data.2 as f64 / ms_per_section as f64;
     if FANCY_TIMELINE {
         if section_data.3 && section_data.4 {

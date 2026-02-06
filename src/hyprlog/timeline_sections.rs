@@ -3,8 +3,8 @@ use crate::{model::Model, Settings};
 
 fn get_relevant_logs<'a>(
     model: &'a Model,
-    settings: &Settings,
-    title: Option<&String>,
+    settings: &'a Settings,
+    title: Option<&'a String>,
 ) -> Vec<&'a Log> {
     if let Some(title_str) = title {
         if settings.class_arg.is_empty() {
@@ -23,7 +23,7 @@ fn get_relevant_logs<'a>(
             Vec::new()
         }
     } else if settings.class_arg.is_empty() {
-        model.logs_iter().collect()
+        model.logs_iter(&settings.focused_interval).collect()
     } else if let Some(class) = model.get_class(&settings.class_arg) {
         class.iter_logs(&model.logs).collect()
     } else {
@@ -37,8 +37,8 @@ pub fn timeline(
     settings: &Settings,
     title: Option<&String>,
 ) -> Vec<(String, i64, i64, bool, bool)> {
-    let ms_per_section = (settings.interval.width() / width as u64) as u64;
-    let starting_ms = settings.interval.start.timestamp_millis() as u64;
+    let ms_per_section = (settings.focused_interval.width() / width as u64) as u64;
+    let starting_ms = settings.focused_interval.start.timestamp_millis() as u64;
     let mut sections: Vec<(String, i64, i64, bool, bool)> =
         vec![(String::from(""), 0, 0, false, false); width];
 
@@ -63,18 +63,20 @@ pub fn timeline(
     }
 
     if let Some(last_log) = model.logs.last() {
-        let timestamp = chrono::Utc::now().timestamp_millis() as u64;
-        assign_interval_to_section(
-            last_log.start,
-            timestamp,
-            &last_log.class,
-            &last_log.title,
-            starting_ms,
-            ms_per_section,
-            settings,
-            title,
-            &mut sections,
-        );
+        if last_log.end.is_none() {
+            let timestamp = chrono::Utc::now().timestamp_millis() as u64;
+            assign_interval_to_section(
+                last_log.start,
+                timestamp,
+                &last_log.class,
+                &last_log.title,
+                starting_ms,
+                ms_per_section,
+                settings,
+                title,
+                &mut sections,
+            );
+        }
     }
 
     sections

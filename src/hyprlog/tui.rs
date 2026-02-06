@@ -10,6 +10,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
+use crate::interval::Interval;
+use crate::interval_change::handle_interval_change;
 use crate::log_reader::LogReader;
 use crate::model::{Log, Model};
 use crate::model_building::{build_model, filter_class};
@@ -19,8 +21,8 @@ use crate::view::{format_short_duration, header, render_log};
 use crate::Settings;
 
 pub struct App {
-    settings: Settings,
-    model: Model,
+    pub settings: Settings,
+    pub model: Model,
     should_quit: bool,
     selected_class: Option<(String, usize)>,
     selected_title: Option<(String, usize)>,
@@ -119,8 +121,6 @@ pub fn start_tui(settings: Settings) -> Result<()> {
 
 fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     loop {
-        process_stream_events(app);
-
         terminal.draw(|f| render(f, app))?;
 
         event_loop(app)?;
@@ -133,6 +133,7 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
 
         app.last_frame_end = Some(Instant::now());
 
+        process_stream_events(app);
         let update_start = Instant::now();
         update(app);
         app.update_time = update_start.elapsed();
@@ -178,6 +179,9 @@ fn process_stream_events(app: &mut App) {
 }
 
 fn update(app: &mut App) {
+    if app.settings.focused_interval.changed {
+        handle_interval_change(app);
+    }
     if app.needs_full_rebuild {
         app.model = Model::new();
         build_model(
@@ -350,8 +354,12 @@ fn event_loop(app: &mut App) -> Result<()> {
                                 }
                             }
                         }
-                        KeyCode::Left => {}
-                        KeyCode::Right => {}
+                        KeyCode::Left => {
+                            app.settings.focused_interval.pan_days(1, false);
+                        }
+                        KeyCode::Right => {
+                            app.settings.focused_interval.pan_days(1, true);
+                        }
                         KeyCode::Esc => {
                             if app.selected_title.is_some() {
                                 app.selected_title = None;

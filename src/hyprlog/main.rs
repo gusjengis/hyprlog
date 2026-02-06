@@ -1,6 +1,7 @@
 mod config;
 mod daemon_commands;
 mod interval;
+mod interval_change;
 mod log_reader;
 mod model;
 mod model_building;
@@ -10,6 +11,7 @@ mod timeline_sections;
 mod tui;
 mod view;
 
+use chrono::Utc;
 use daemon_commands::send_command;
 use std::env;
 
@@ -44,7 +46,8 @@ fn main() {
                 } else if days {
                     match arg.clone().parse::<u64>() {
                         Ok(day_count) => {
-                            settings.interval.set_days(day_count);
+                            settings.loaded_interval.set_days(day_count);
+                            settings.focused_interval.set_days(day_count);
                             days = false;
                         }
                         Err(_) => {
@@ -110,7 +113,8 @@ pub struct Settings {
     pub full: bool,
     pub multi_timeline: bool,
     pub class_arg: String,
-    pub interval: Interval,
+    pub loaded_interval: Interval,
+    pub focused_interval: Interval,
     pub config: Config,
 }
 
@@ -120,7 +124,12 @@ impl Settings {
             full: false,
             multi_timeline: false,
             class_arg: String::from(""),
-            interval: Interval::default(),
+            loaded_interval: Interval {
+                start: Utc::now(),
+                end: Utc::now(),
+                changed: false,
+            },
+            focused_interval: Interval::default(),
             config: Config::new(),
         }
     }

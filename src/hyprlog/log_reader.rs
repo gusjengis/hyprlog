@@ -26,8 +26,8 @@ impl LogReader {
 
         create_dir_all(&base_dir).expect("failed to create data directory");
         // get all files in the interval
-        let start = settings.interval.start.date_naive();
-        let end = settings.interval.end.date_naive();
+        let start = settings.focused_interval.start.date_naive();
+        let end = settings.focused_interval.end.date_naive();
 
         let mut files = Vec::new();
         let mut current = start;
@@ -45,7 +45,7 @@ impl LogReader {
             file_idx: 0,
             rdr: None,
             last_headers: None,
-            interval: settings.interval.clone(),
+            interval: settings.focused_interval.clone(),
         }
     }
 

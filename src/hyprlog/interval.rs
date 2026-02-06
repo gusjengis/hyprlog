@@ -1,9 +1,12 @@
 use chrono::{DateTime, Days, Local, NaiveTime, TimeDelta, TimeZone, Utc};
 
+use crate::model::Log;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interval {
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
+    pub changed: bool,
 }
 
 impl Default for Interval {
@@ -14,6 +17,7 @@ impl Default for Interval {
         Interval {
             start: local_midnight_to_utc(today),
             end: local_midnight_to_utc(tomorrow),
+            changed: false,
         }
     }
 }
@@ -28,6 +32,7 @@ impl Interval {
         Interval {
             start: local_midnight_to_utc(start_day),
             end: local_midnight_to_utc(end_day),
+            changed: false,
         }
     }
 
@@ -67,18 +72,57 @@ impl Interval {
     }
 
     pub fn pan_days(&mut self, days: u64, forward: bool) {
-        let offset = Days::new(days);
-        // let upper_bound =
+        let original_start = self.start;
+        let original_end = self.end;
+
         let today = Local::now().date_naive();
-        let tomorrow = today + TimeDelta::days(1);
-        local_midnight_to_utc(tomorrow);
+        let tonight_midnight = local_midnight_to_utc(today + TimeDelta::days(1));
         if forward {
-            self.start = self.start + offset;
-            self.end = self.end + offset;
+            let desired_shift = TimeDelta::days(days as i64);
+            let potential_end = self.end + desired_shift;
+            if potential_end >= tonight_midnight {
+                let max_shift = tonight_midnight - self.end;
+                self.start = self.start + max_shift;
+                self.end = tonight_midnight;
+            } else {
+                self.start = self.start + desired_shift;
+                self.end = potential_end;
+            }
         } else {
+            let offset = Days::new(days);
             self.start = self.start - offset;
             self.end = self.end - offset;
         }
+
+        self.changed = self.start != original_start || self.end != original_end;
+    }
+
+    pub fn expand_to_include(&mut self, focused_interval: &Interval) {
+        self.start = focused_interval.start.min(self.start);
+        self.end = focused_interval.end.min(self.end);
+    }
+
+    pub fn overlap(&self, other_interval: &Interval) -> Option<Interval> {
+        if self.start < other_interval.end && self.end > other_interval.start {
+            Some(Interval {
+                start: self.start.max(other_interval.start),
+                end: self.end.min(other_interval.end),
+                changed: false,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn contains_log(&self, log: &Log) -> bool {
+        let end;
+        if let Some(end_) = log.end {
+            end = end_;
+        } else {
+            end = chrono::Utc::now().timestamp_millis() as u64;
+        }
+        log.start >= self.start.timestamp_millis() as u64
+            && end <= self.end.timestamp_millis() as u64
     }
 }
 

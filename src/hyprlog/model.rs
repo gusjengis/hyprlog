@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::interval::Interval;
+
 pub struct Log {
     pub start: u64,
     pub end: Option<u64>,
@@ -249,9 +251,10 @@ impl Model {
         self.classes.iter().position(|c| c.class == class)
     }
 
-    pub fn logs_iter(&self) -> impl Iterator<Item = &Log> {
-        self.logs.iter()
+    pub fn logs_iter<'a>(&'a self, interval: &'a Interval) -> impl Iterator<Item = &Log> + 'a {
+        self.logs.iter().filter(|log| interval.contains_log(log))
     }
+
     pub fn get_title(&self, class_name: &String, title_name: &String) -> Option<&Title> {
         if let Some(class) = self.get_class(class_name) {
             class.get_title(title_name)
@@ -329,6 +332,43 @@ impl Model {
                 }
             }
             i += 1;
+        }
+    }
+
+    pub fn reset_mappings(&mut self) {
+        self.classes.clear();
+        self.class_map.clear();
+        self.titles.clear();
+    }
+
+    pub fn map_log(&mut self, log_index: usize) {
+        let log = &self.logs[log_index];
+        let class_string = log.class.clone();
+        let title_string = log.title.clone();
+        let mut log_duration = log.duration();
+        if log.end.is_none() {
+            log_duration = 0;
+        }
+
+        self.get_class_mut(class_string)
+            .add_log(log_index, title_string, log_duration);
+    }
+
+    pub fn map_overlap(&mut self, overlap: &Interval) {
+        let mut to_map = Vec::new();
+        for i in 0..self.logs.len() {
+            let log = &self.logs[i];
+            if overlap.contains_log(log) {
+                let class_string = log.class.clone();
+                let title_string = log.title.clone();
+                let log_duration = if log.end.is_none() { 0 } else { log.duration() };
+                to_map.push((i, class_string, title_string, log_duration));
+            }
+        }
+
+        for (i, class_string, title_string, log_duration) in to_map {
+            self.get_class_mut(class_string)
+                .add_log(i, title_string, log_duration);
         }
     }
 }
