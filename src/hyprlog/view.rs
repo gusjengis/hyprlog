@@ -11,12 +11,12 @@ pub fn render_log(model: &Model, settings: &Settings) -> Option<Text<'static>> {
     let labels = get_labels(model, settings);
 
     if labels.is_empty() {
-        if &settings.class_arg == "" {
-            println!("Empty log.");
+        let message = if settings.class_arg.is_empty() {
+            "Empty log.".to_string()
         } else {
-            println!("Class \"{}\" not found in log.", &settings.class_arg);
-        }
-        return None;
+            format!("Class \"{}\" not found in log.", &settings.class_arg)
+        };
+        return Some(Text::from(Line::from(message)));
     }
 
     let colors = key_to_color_map(&labels);
