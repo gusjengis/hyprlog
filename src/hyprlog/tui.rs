@@ -427,15 +427,21 @@ fn footer_line(app: &App) -> Line<'static> {
         |end| format_short_duration(end.elapsed()),
     );
 
-    Line::from(vec![
+    let mut spans = vec![
         key_span("q"),
         Span::raw("quit  •  "),
         key_span("m"),
         toggle_span("multi-timeline", app.settings.multi_timeline),
         Span::raw("  •  "),
-        key_span("f"),
-        toggle_span("follow", app.follow),
-        Span::raw("  •  "),
+    ];
+
+    if now_is_visible(app) {
+        spans.push(key_span("f"));
+        spans.push(toggle_span("follow", app.follow));
+        spans.push(Span::raw("  •  "));
+    }
+
+    spans.extend([
         key_span("↑/↓"),
         Span::raw("move  •  "),
         key_span("esc"),
@@ -464,7 +470,9 @@ fn footer_line(app: &App) -> Line<'static> {
             format!("titles: {}", format_short_duration(app.titles_time)),
             Style::default().add_modifier(Modifier::DIM),
         ),
-    ])
+    ]);
+
+    Line::from(spans)
 }
 
 fn set_follow(app: &mut App, follow: bool) {
