@@ -133,4 +133,8 @@ impl Settings {
             config: Config::new(),
         }
     }
+
+    pub fn scale(&self) -> u64 {
+        self.focused_interval.width()
+    }
 }
