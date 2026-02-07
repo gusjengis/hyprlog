@@ -8,6 +8,7 @@ mod model;
 mod model_building;
 mod stream_client;
 mod tables;
+mod ticks;
 mod timeline_sections;
 mod tui;
 mod view;
