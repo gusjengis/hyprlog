@@ -53,9 +53,6 @@ pub fn header(settings: &Settings) -> String {
     return res;
 }
 
-const FANCY_TIMELINE: bool = true;
-pub const CUTOFF: usize = usize::MAX; // not doing anything but the setting is here
-
 pub fn render_timelines(
     model: &Model,
     colors: &HashMap<String, Color>,
@@ -72,9 +69,6 @@ pub fn render_timelines(
         for label in labels {
             if label.len() == 0 {
                 continue;
-            }
-            if count >= CUTOFF {
-                break;
             }
             lines.push(build_timeline(model, colors, settings, Some(&label)));
             lines.push(Line::from("\n"));
@@ -110,21 +104,15 @@ fn build_timeline(
             // To match your old look, when FANCY_TIMELINE is enabled we apply CROSSED_OUT
             // broadly (so the decoration stays colored with the fg).
             let mut base_style = Style::default().fg(*color);
-            if FANCY_TIMELINE {
-                base_style = base_style.add_modifier(Modifier::CROSSED_OUT);
-            }
+            base_style = base_style.add_modifier(Modifier::CROSSED_OUT);
 
             let (s, style) = if *color == Color::Black {
-                if FANCY_TIMELINE {
-                    (
-                        " ".to_string(),
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD | Modifier::CROSSED_OUT),
-                    )
-                } else {
-                    ("—".to_string(), Style::default().fg(Color::White))
-                }
+                (
+                    " ".to_string(),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD | Modifier::CROSSED_OUT),
+                )
             } else {
                 (
                     choose_character(section_data, settings).to_string(),
@@ -143,50 +131,43 @@ fn choose_character(section_data: &TimelineCharacter, settings: &Settings) -> ch
     let width = terminal_width();
     let ms_per_section = (settings.focused_interval.width() / (width as u64)) as f64;
     let fullness = section_data.total as f64 / ms_per_section as f64;
-    if FANCY_TIMELINE {
-        if section_data.activity_at_left_edge && section_data.activity_at_right_edge {
-            // there is activity near both the left and right side of a section
-            return '█';
-        } else if section_data.activity_at_left_edge {
-            // there is activity near the left side of a section
-            return match fullness {
-                f64::MIN..=0.00 => ' ',
-                0.0..=0.1250000 => '▏',
-                0.125..=0.25000 => '▎',
-                0.25..=0.375000 => '▍',
-                0.375..=0.50000 => '▌',
-                0.5..=0.6250000 => '▋',
-                0.625..=0.75000 => '▊',
-                0.75..=f64::MAX => '█',
-                _ => '—',
-            };
-        } else if section_data.activity_at_right_edge {
-            // there is activity near the right side of a section
-            return match fullness {
-                f64::MIN..=0.00 => ' ',
-                0.0..=0.1250000 => '🮇',
-                0.125..=0.25000 => '🮈',
-                0.25..=0.375000 => '▐',
-                0.375..=0.50000 => '🮉',
-                0.5..=0.6250000 => '🮊',
-                0.625..=0.75000 => '🮋',
-                0.75..=f64::MAX => '█',
-                _ => ' ',
-            };
-        } else {
-            return match fullness {
-                f64::MIN..=0.00 => ' ',
-                0.00..=0.333333 => '│',
-                0.333333..=0.66 => '┃',
-                0.66..=f64::MAX => '█',
-                _ => ' ',
-            };
-        }
-    } else {
-        if fullness == 0.0 {
-            return ' ';
-        }
+    if section_data.activity_at_left_edge && section_data.activity_at_right_edge {
+        // there is activity near both the left and right side of a section
         return '█';
+    } else if section_data.activity_at_left_edge {
+        // there is activity near the left side of a section
+        return match fullness {
+            f64::MIN..=0.00 => ' ',
+            0.0..=0.1250000 => '▏',
+            0.125..=0.25000 => '▎',
+            0.25..=0.375000 => '▍',
+            0.375..=0.50000 => '▌',
+            0.5..=0.6250000 => '▋',
+            0.625..=0.75000 => '▊',
+            0.75..=f64::MAX => '█',
+            _ => '—',
+        };
+    } else if section_data.activity_at_right_edge {
+        // there is activity near the right side of a section
+        return match fullness {
+            f64::MIN..=0.00 => ' ',
+            0.0..=0.1250000 => '🮇',
+            0.125..=0.25000 => '🮈',
+            0.25..=0.375000 => '▐',
+            0.375..=0.50000 => '🮉',
+            0.5..=0.6250000 => '🮊',
+            0.625..=0.75000 => '🮋',
+            0.75..=f64::MAX => '█',
+            _ => ' ',
+        };
+    } else {
+        return match fullness {
+            f64::MIN..=0.00 => ' ',
+            0.00..=0.333333 => '│',
+            0.333333..=0.66 => '┃',
+            0.66..=f64::MAX => '█',
+            _ => ' ',
+        };
     }
 }
 

@@ -6,8 +6,53 @@ use ratatui::{
 
 use crate::{
     model::{Class, Model},
-    view::{color_from_index, format_duration, terminal_width, truncate_string, CUTOFF},
+    view::{color_from_index, format_duration, terminal_width, truncate_string},
 };
+
+fn percent_of(duration: u64, total: u64) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        100.0 * (duration as f64 / total as f64)
+    }
+}
+
+fn name_cell(name: &str, style: Style, max_string_length: usize) -> Cell<'static> {
+    Cell::from(truncate_string(name, max_string_length)).style(style)
+}
+
+fn duration_cell(duration: u64, style: Style, max_duration_width: &mut usize) -> Cell<'static> {
+    let duration_string = format_duration(duration);
+    if duration_string.len() > *max_duration_width {
+        *max_duration_width = duration_string.len();
+    }
+
+    Cell::from(duration_string).style(style)
+}
+
+fn percent_cell(percent: f64, style: Style) -> Cell<'static> {
+    Cell::from(format!("{:>7.2}%", percent)).style(style)
+}
+
+fn total_row(max_string_length: usize, total_duration: u64, total_percentage: f64) -> Row<'static> {
+    Row::new(vec![
+        Cell::from(truncate_string("Total", max_string_length))
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+        Cell::from(format_duration(total_duration))
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+        Cell::from(format!("{:>7.2}%", total_percentage))
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+    ])
+    .top_margin(1)
+}
+
+fn table_widths(width: u16, max_duration_width: usize) -> [Constraint; 3] {
+    [
+        Constraint::Length(width as u16 - (max_duration_width + 9) as u16),
+        Constraint::Length(max_duration_width as u16),
+        Constraint::Length(9),
+    ]
+}
 
 pub fn build_class_table(
     model: &Model,
@@ -38,15 +83,11 @@ pub fn build_class_table(
     let mut total_percentage = 0.0;
     let mut total_duration: u64 = 0;
 
-    for (count, (class, duration, class_index)) in rows.iter().take(CUTOFF).enumerate() {
+    for (count, (class, duration, class_index)) in rows.iter().enumerate() {
         let _ = count; // (remove if unused later)
         total_duration += *duration;
 
-        let percent = if total == 0 {
-            0.0
-        } else {
-            100.0 * (*duration as f64 / total as f64)
-        };
+        let percent = percent_of(*duration, total);
         total_percentage += percent;
 
         let is_selected = selected_class
@@ -64,7 +105,7 @@ pub fn build_class_table(
             class_style = class_style.add_modifier(Modifier::REVERSED);
         }
 
-        let class_cell = Cell::from(truncate_string(class, max_string_length)).style(class_style);
+        let class_cell = name_cell(class, class_style, max_string_length);
 
         let dur_cell = {
             let mut s = Style::default();
@@ -74,12 +115,7 @@ pub fn build_class_table(
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
-            let duration_string = format_duration(*duration);
-            if duration_string.len() > max_duration_width {
-                max_duration_width = duration_string.len();
-            }
-
-            Cell::from(duration_string).style(s)
+            duration_cell(*duration, s, &mut max_duration_width)
         };
 
         let pct_cell = {
@@ -90,30 +126,19 @@ pub fn build_class_table(
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
-            Cell::from(format!("{:>7.2}%", percent)).style(s)
+            percent_cell(percent, s)
         };
 
         table_rows.push(Row::new(vec![class_cell, dur_cell, pct_cell]));
     }
 
-    // Add "Total" row (bold)
-    table_rows.push(
-        Row::new(vec![
-            Cell::from(truncate_string("Total", max_string_length))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from(format_duration(total_duration))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from(format!("{:>7.2}%", total_percentage))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-        ])
-        .top_margin(1),
-    );
+    table_rows.push(total_row(
+        max_string_length,
+        total_duration,
+        total_percentage,
+    ));
 
-    let widths = [
-        Constraint::Length(width as u16 - (max_duration_width + 9) as u16),
-        Constraint::Length(max_duration_width as u16),
-        Constraint::Length(9),
-    ];
+    let widths = table_widths(width, max_duration_width);
 
     Table::new(table_rows, widths)
         .header(
@@ -189,11 +214,7 @@ pub fn build_title_table(
     for (title, duration, title_index, class_index) in rows.iter() {
         total_duration += *duration;
 
-        let percent = if total == 0 {
-            0.0
-        } else {
-            100.0 * (*duration as f64 / total as f64)
-        };
+        let percent = percent_of(*duration, total);
         total_percentage += percent;
 
         // Selection styling (title selection is within the selected class)
@@ -214,7 +235,7 @@ pub fn build_title_table(
             title_style = title_style.add_modifier(Modifier::REVERSED);
         }
 
-        let title_cell = Cell::from(truncate_string(title, max_string_length)).style(title_style);
+        let title_cell = name_cell(title, title_style, max_string_length);
 
         let dur_cell = {
             let mut s = Style::default();
@@ -226,12 +247,7 @@ pub fn build_title_table(
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
-            let duration_string = format_duration(*duration);
-            if duration_string.len() > max_duration_width {
-                max_duration_width = duration_string.len();
-            }
-
-            Cell::from(duration_string).style(s)
+            duration_cell(*duration, s, &mut max_duration_width)
         };
 
         let pct_cell = {
@@ -244,30 +260,19 @@ pub fn build_title_table(
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
-            Cell::from(format!("{:>7.2}%", percent)).style(s)
+            percent_cell(percent, s)
         };
 
         table_rows.push(Row::new(vec![title_cell, dur_cell, pct_cell]));
     }
 
-    // Add "Total" row (bold)
-    table_rows.push(
-        Row::new(vec![
-            Cell::from(truncate_string("Total", max_string_length))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from(format_duration(total_duration))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from(format!("{:>7.2}%", total_percentage))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-        ])
-        .top_margin(1),
-    );
+    table_rows.push(total_row(
+        max_string_length,
+        total_duration,
+        total_percentage,
+    ));
 
-    let widths = [
-        Constraint::Length(width as u16 - (max_duration_width + 9) as u16),
-        Constraint::Length(max_duration_width as u16),
-        Constraint::Length(9),
-    ];
+    let widths = table_widths(width, max_duration_width);
 
     Table::new(table_rows, widths)
         .header(
