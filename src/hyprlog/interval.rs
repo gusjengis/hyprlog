@@ -107,6 +107,32 @@ impl Interval {
         self.changed = self.start != original_start || self.end != original_end;
     }
 
+    pub fn pan_millis(&mut self, delta_ms: i64) {
+        let original_start = self.start;
+        let original_end = self.end;
+
+        let delta = TimeDelta::milliseconds(delta_ms);
+        let desired_start = self.start + delta;
+        let desired_end = self.end + delta;
+
+        let tonight_midnight =
+            local_midnight_to_utc(Local::now().date_naive() + TimeDelta::days(1));
+
+        let span = self.end - self.start;
+
+        let (next_start, next_end) = if desired_end > tonight_midnight {
+            let capped_end = tonight_midnight;
+            let capped_start = capped_end - span;
+            (capped_start, capped_end)
+        } else {
+            (desired_start, desired_end)
+        };
+
+        self.start = next_start;
+        self.end = next_end;
+        self.changed = self.start != original_start || self.end != original_end;
+    }
+
     pub fn expand_to_include(&mut self, focused_interval: &Interval) {
         self.start = focused_interval.start.min(self.start);
         self.end = focused_interval.end.max(self.end);

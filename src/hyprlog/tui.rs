@@ -1,16 +1,21 @@
+use std::io::stdout;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use color_eyre::eyre::Context;
 use color_eyre::Result;
-use crossterm::event::{self, KeyCode, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+    MouseEvent, MouseEventKind,
+};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
+use crate::interval::Interval;
 use crate::interval_change::handle_interval_change;
 use crate::log_reader::LogReader;
 use crate::model::{Log, Model};
@@ -37,6 +42,14 @@ pub struct App {
     pending_logs: Vec<Log>,
     needs_full_rebuild: bool,
     force_render: std::sync::Arc<AtomicBool>,
+    timeline_area: Rect,
+    drag_state: Option<DragState>,
+}
+
+struct DragState {
+    start_col: u16,
+    start_interval: Interval,
+    area_width: u16,
 }
 
 impl App {
@@ -64,6 +77,8 @@ impl App {
             pending_logs: Vec::new(),
             needs_full_rebuild: false,
             force_render,
+            timeline_area: Rect::default(),
+            drag_state: None,
         };
 
         if let Some(ref mut client) = app.stream_client {
@@ -116,7 +131,10 @@ pub fn start_tui(settings: Settings) -> Result<()> {
     }
 
     let _ = update(&mut app);
-    ratatui::run(|terminal| run(terminal, &mut app)).context("failed to run app")
+    crossterm::execute!(stdout(), EnableMouseCapture).context("failed to enable mouse capture")?;
+    let result = ratatui::run(|terminal| run(terminal, &mut app)).context("failed to run app");
+    let _ = crossterm::execute!(stdout(), DisableMouseCapture);
+    result
 }
 
 fn run(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
@@ -278,6 +296,8 @@ fn render(frame: &mut Frame, app: &mut App) {
         ])
         .split(frame.area());
 
+    app.timeline_area = chunks[0];
+
     let mut timeline_paragraph = Paragraph::new(timelines_text).wrap(Wrap { trim: false });
     if center_timeline {
         timeline_paragraph = timeline_paragraph.alignment(Alignment::Center);
@@ -324,72 +344,121 @@ fn event_loop(app: &mut App) -> Result<()> {
         }
 
         if event::poll(Duration::ZERO).context("event poll failed")? {
-            if let event::Event::Key(key) = event::read().context("event read failed")? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') => app.should_quit = true,
-                        KeyCode::Char('m') => {
-                            app.settings.multi_timeline = !app.settings.multi_timeline
-                        }
-                        KeyCode::Char('f') => {
-                            set_follow(app, !app.follow);
-                        }
-                        KeyCode::Up => {
-                            if let None = app.selected_class.as_ref() {
-                                app.selected_class = Some((app.model.classes[0].class.clone(), 0));
-                            } else if let Some((class, index)) = app.selected_class.as_mut() {
-                                if let Some((title, index)) = app.selected_title.as_mut() {
-                                    if *index > 0 {
+            match event::read().context("event read failed")? {
+                Event::Key(key) => {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('q') => app.should_quit = true,
+                            KeyCode::Char('m') => {
+                                app.settings.multi_timeline = !app.settings.multi_timeline
+                            }
+                            KeyCode::Char('f') => {
+                                set_follow(app, !app.follow);
+                            }
+                            KeyCode::Up => {
+                                if let None = app.selected_class.as_ref() {
+                                    app.selected_class =
+                                        Some((app.model.classes[0].class.clone(), 0));
+                                } else if let Some((class, index)) = app.selected_class.as_mut() {
+                                    if let Some((title, index)) = app.selected_title.as_mut() {
+                                        if *index > 0 {
+                                            *index = *index - 1;
+                                            *title = app.model.get_class_mut(class.clone()).titles
+                                                [*index]
+                                                .title
+                                                .clone();
+                                        }
+                                    } else if *index > 0 {
                                         *index = *index - 1;
+                                        *class = app.model.classes[*index].class.clone();
+                                    }
+                                }
+                            }
+                            KeyCode::Down => {
+                                if let None = app.selected_class.as_ref() {
+                                    app.selected_class =
+                                        Some((app.model.classes[0].class.clone(), 0));
+                                } else if let Some((class, index)) = app.selected_class.as_mut() {
+                                    if let Some((title, index)) = app.selected_title.as_mut() {
+                                        *index = (*index + 1).min(
+                                            app.model.get_class_mut(class.clone()).titles.len() - 1,
+                                        );
                                         *title = app.model.get_class_mut(class.clone()).titles
                                             [*index]
                                             .title
                                             .clone();
+                                    } else {
+                                        *index = (*index + 1).min(app.model.classes.len() - 1);
+                                        *class = app.model.classes[*index].class.clone();
                                     }
-                                } else if *index > 0 {
-                                    *index = *index - 1;
-                                    *class = app.model.classes[*index].class.clone();
                                 }
                             }
-                        }
-                        KeyCode::Down => {
-                            if let None = app.selected_class.as_ref() {
-                                app.selected_class = Some((app.model.classes[0].class.clone(), 0));
-                            } else if let Some((class, index)) = app.selected_class.as_mut() {
-                                if let Some((title, index)) = app.selected_title.as_mut() {
-                                    *index = (*index + 1).min(
-                                        app.model.get_class_mut(class.clone()).titles.len() - 1,
-                                    );
-                                    *title = app.model.get_class_mut(class.clone()).titles[*index]
-                                        .title
-                                        .clone();
-                                } else {
-                                    *index = (*index + 1).min(app.model.classes.len() - 1);
-                                    *class = app.model.classes[*index].class.clone();
+                            KeyCode::Left => {
+                                app.settings.focused_interval.pan_days(1, false);
+                            }
+                            KeyCode::Right => {
+                                app.settings.focused_interval.pan_days(1, true);
+                            }
+                            KeyCode::Esc => {
+                                if app.selected_title.is_some() {
+                                    app.selected_title = None;
+                                } else if app.selected_class.is_some() {
+                                    app.selected_class = None;
+                                    app.settings.class_arg = String::from("");
                                 }
                             }
+                            _ => {}
                         }
-                        KeyCode::Left => {
-                            app.settings.focused_interval.pan_days(1, false);
-                        }
-                        KeyCode::Right => {
-                            app.settings.focused_interval.pan_days(1, true);
-                        }
-                        KeyCode::Esc => {
-                            if app.selected_title.is_some() {
-                                app.selected_title = None;
-                            } else if app.selected_class.is_some() {
-                                app.selected_class = None;
-                                app.settings.class_arg = String::from("");
-                            }
-                        }
-                        _ => {}
                     }
                 }
+                Event::Mouse(mouse) => handle_mouse_event(app, mouse),
+                _ => {}
             }
             return Ok(());
         }
     }
+}
+
+fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            if timeline_contains(app.timeline_area, mouse.column, mouse.row) {
+                app.drag_state = Some(DragState {
+                    start_col: mouse.column,
+                    start_interval: app.settings.focused_interval.clone(),
+                    area_width: app.timeline_area.width,
+                });
+            } else {
+                app.drag_state = None;
+            }
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            if let Some(state) = app.drag_state.as_ref() {
+                if state.area_width > 0 {
+                    let delta_cols = mouse.column as i64 - state.start_col as i64;
+                    let interval_ms = state.start_interval.width() as i64;
+                    let ms_per_column = interval_ms / state.area_width as i64;
+                    if ms_per_column != 0 {
+                        let delta_ms = -delta_cols * ms_per_column;
+                        let mut next_interval = state.start_interval.clone();
+                        next_interval.pan_millis(delta_ms);
+                        app.settings.focused_interval = next_interval;
+                    }
+                }
+            }
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            app.drag_state = None;
+        }
+        _ => {}
+    }
+}
+
+fn timeline_contains(area: Rect, column: u16, row: u16) -> bool {
+    if area.width == 0 || area.height == 0 {
+        return false;
+    }
+    column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height
 }
 
 fn draw_inner_border(frame: &mut Frame, area: Rect, style: Style) {
