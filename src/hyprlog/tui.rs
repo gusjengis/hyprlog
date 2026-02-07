@@ -5,16 +5,14 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use color_eyre::eyre::Context;
 use color_eyre::Result;
-use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
-    MouseEvent, MouseEventKind,
-};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
+use crate::input::event_loop;
 use crate::interval::Interval;
 use crate::interval_change::handle_interval_change;
 use crate::log_reader::LogReader;
@@ -28,10 +26,10 @@ use crate::Settings;
 pub struct App {
     pub settings: Settings,
     pub model: Model,
-    should_quit: bool,
-    selected_class: Option<(String, usize)>,
-    selected_title: Option<(String, usize)>,
-    follow: bool,
+    pub(crate) should_quit: bool,
+    pub(crate) selected_class: Option<(String, usize)>,
+    pub(crate) selected_title: Option<(String, usize)>,
+    pub(crate) follow: bool,
     last_frame_end: Option<Instant>,
     update_time: Duration,
     timeline_time: Duration,
@@ -41,15 +39,15 @@ pub struct App {
     next_expected_seq: u64,
     pending_logs: Vec<Log>,
     needs_full_rebuild: bool,
-    force_render: std::sync::Arc<AtomicBool>,
-    timeline_area: Rect,
-    drag_state: Option<DragState>,
+    pub(crate) force_render: std::sync::Arc<AtomicBool>,
+    pub(crate) timeline_area: Rect,
+    pub(crate) drag_state: Option<DragState>,
 }
 
-struct DragState {
-    start_col: u16,
-    start_interval: Interval,
-    area_width: u16,
+pub(crate) struct DragState {
+    pub(crate) start_col: u16,
+    pub(crate) start_interval: Interval,
+    pub(crate) area_width: u16,
 }
 
 impl App {
@@ -333,134 +331,6 @@ fn render(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(footer_line(app)), chunks[3]);
 }
 
-fn event_loop(app: &mut App) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        if start.elapsed() > Duration::from_millis(250) {
-            return Ok(());
-        }
-        if app.force_render.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-
-        if event::poll(Duration::ZERO).context("event poll failed")? {
-            match event::read().context("event read failed")? {
-                Event::Key(key) => {
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Char('q') => app.should_quit = true,
-                            KeyCode::Char('m') => {
-                                app.settings.multi_timeline = !app.settings.multi_timeline
-                            }
-                            KeyCode::Char('f') => {
-                                set_follow(app, !app.follow);
-                            }
-                            KeyCode::Up => {
-                                if let None = app.selected_class.as_ref() {
-                                    app.selected_class =
-                                        Some((app.model.classes[0].class.clone(), 0));
-                                } else if let Some((class, index)) = app.selected_class.as_mut() {
-                                    if let Some((title, index)) = app.selected_title.as_mut() {
-                                        if *index > 0 {
-                                            *index = *index - 1;
-                                            *title = app.model.get_class_mut(class.clone()).titles
-                                                [*index]
-                                                .title
-                                                .clone();
-                                        }
-                                    } else if *index > 0 {
-                                        *index = *index - 1;
-                                        *class = app.model.classes[*index].class.clone();
-                                    }
-                                }
-                            }
-                            KeyCode::Down => {
-                                if let None = app.selected_class.as_ref() {
-                                    app.selected_class =
-                                        Some((app.model.classes[0].class.clone(), 0));
-                                } else if let Some((class, index)) = app.selected_class.as_mut() {
-                                    if let Some((title, index)) = app.selected_title.as_mut() {
-                                        *index = (*index + 1).min(
-                                            app.model.get_class_mut(class.clone()).titles.len() - 1,
-                                        );
-                                        *title = app.model.get_class_mut(class.clone()).titles
-                                            [*index]
-                                            .title
-                                            .clone();
-                                    } else {
-                                        *index = (*index + 1).min(app.model.classes.len() - 1);
-                                        *class = app.model.classes[*index].class.clone();
-                                    }
-                                }
-                            }
-                            KeyCode::Left => {
-                                app.settings.focused_interval.pan_days(1, false);
-                            }
-                            KeyCode::Right => {
-                                app.settings.focused_interval.pan_days(1, true);
-                            }
-                            KeyCode::Esc => {
-                                if app.selected_title.is_some() {
-                                    app.selected_title = None;
-                                } else if app.selected_class.is_some() {
-                                    app.selected_class = None;
-                                    app.settings.class_arg = String::from("");
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Event::Mouse(mouse) => handle_mouse_event(app, mouse),
-                _ => {}
-            }
-            return Ok(());
-        }
-    }
-}
-
-fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
-    match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left) => {
-            if timeline_contains(app.timeline_area, mouse.column, mouse.row) {
-                app.drag_state = Some(DragState {
-                    start_col: mouse.column,
-                    start_interval: app.settings.focused_interval.clone(),
-                    area_width: app.timeline_area.width,
-                });
-            } else {
-                app.drag_state = None;
-            }
-        }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            if let Some(state) = app.drag_state.as_ref() {
-                if state.area_width > 0 {
-                    let delta_cols = mouse.column as i64 - state.start_col as i64;
-                    let interval_ms = state.start_interval.width() as i64;
-                    let ms_per_column = interval_ms / state.area_width as i64;
-                    if ms_per_column != 0 {
-                        let delta_ms = -delta_cols * ms_per_column;
-                        let mut next_interval = state.start_interval.clone();
-                        next_interval.pan_millis(delta_ms);
-                        app.settings.focused_interval = next_interval;
-                    }
-                }
-            }
-        }
-        MouseEventKind::Up(MouseButton::Left) => {
-            app.drag_state = None;
-        }
-        _ => {}
-    }
-}
-
-fn timeline_contains(area: Rect, column: u16, row: u16) -> bool {
-    if area.width == 0 || area.height == 0 {
-        return false;
-    }
-    column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height
-}
-
 fn draw_inner_border(frame: &mut Frame, area: Rect, style: Style) {
     let x0 = area.x;
     let x1 = area.x + 1;
@@ -545,7 +415,7 @@ fn footer_line(app: &App) -> Line<'static> {
     Line::from(spans)
 }
 
-fn set_follow(app: &mut App, follow: bool) {
+pub(crate) fn set_follow(app: &mut App, follow: bool) {
     app.follow = follow;
     app.selected_title = None;
 }

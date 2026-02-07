@@ -1,5 +1,6 @@
 mod config;
 mod daemon_commands;
+mod input;
 mod interval;
 mod interval_change;
 mod log_reader;
