@@ -224,6 +224,7 @@ impl Model {
     }
 
     fn build_titles(&mut self) {
+        self.titles.clear();
         for (i, class) in self.classes.iter().enumerate() {
             for (j, _) in class.titles.iter().enumerate() {
                 self.titles.push((i, j));

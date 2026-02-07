@@ -71,6 +71,10 @@ impl Interval {
         ts >= self.start && ts < self.end
     }
 
+    pub fn contains_interval(&self, interval: &Interval) -> bool {
+        self.start <= interval.start && self.end >= interval.end
+    }
+
     pub fn pan_days(&mut self, days: u64, forward: bool) {
         let original_start = self.start;
         let original_end = self.end;
