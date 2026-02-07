@@ -109,7 +109,7 @@ impl Interval {
 
     pub fn expand_to_include(&mut self, focused_interval: &Interval) {
         self.start = focused_interval.start.min(self.start);
-        self.end = focused_interval.end.min(self.end);
+        self.end = focused_interval.end.max(self.end);
     }
 
     pub fn overlap(&self, other_interval: &Interval) -> Option<Interval> {

@@ -23,6 +23,9 @@ pub fn build_model(
             .loaded_interval
             .contains_utc_timestamp_millis(timestamp)
         {
+            last_timestamp = None;
+            last_class = None;
+            last_title = None;
             continue;
         }
         let mut class = record[1].to_string();
