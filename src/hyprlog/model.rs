@@ -20,9 +20,11 @@ impl Log {
     }
 
     pub fn duration(&self) -> u64 {
-        self.end
-            .unwrap_or(chrono::Utc::now().timestamp_millis() as u64)
-            - self.start
+        (self
+            .end
+            .unwrap_or(chrono::Utc::now().timestamp_millis() as u64) as i64
+            - self.start as i64)
+            .max(0) as u64
     }
 }
 
