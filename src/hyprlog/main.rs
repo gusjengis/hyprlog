@@ -46,7 +46,6 @@ fn main() {
                 } else if days {
                     match arg.clone().parse::<u64>() {
                         Ok(day_count) => {
-                            settings.loaded_interval.set_days(day_count);
                             settings.focused_interval.set_days(day_count);
                             days = false;
                         }
