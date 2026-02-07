@@ -200,8 +200,9 @@ fn update(app: &mut App) {
         }
     }
 
-    app.model.maintain_order(vec![app.model.logs.len() - 1]);
-    // app.model.sort();
+    if !app.model.logs.is_empty() {
+        app.model.maintain_order(vec![app.model.logs.len() - 1]);
+    }
 
     if let Some((class, index)) = app.selected_class.as_mut() {
         if let Some(class_index) = app.model.index_of(&class) {
