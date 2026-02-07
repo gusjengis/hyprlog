@@ -11,12 +11,7 @@ pub fn render_log(model: &Model, settings: &Settings) -> Result<Text<'static>, S
     let labels = get_labels(model, settings);
 
     if labels.is_empty() {
-        let message = if settings.class_arg.is_empty() {
-            "Empty log".to_string()
-        } else {
-            format!("Class \"{}\" not found in log", &settings.class_arg)
-        };
-        return Err(message);
+        return Err("Empty log".to_string());
     }
 
     let colors = key_to_color_map(&labels);

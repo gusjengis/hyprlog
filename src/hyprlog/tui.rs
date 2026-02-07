@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use chrono::Utc;
 use color_eyre::eyre::Context;
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
@@ -216,27 +217,38 @@ fn update(app: &mut App) {
                     if *index >= class_struct.titles.len() {
                         *index = class_struct.titles.len() - 1;
                     }
-                    *title = class_struct.titles[*index].title.clone();
+
+                    if !class_struct.titles.is_empty() {
+                        *title = class_struct.titles[*index].title.clone();
+                    } else {
+                        app.selected_title = None;
+                    }
                 }
             }
         } else {
             if *index >= app.model.classes.len() {
                 *index = app.model.classes.len() - 1;
             }
-            *class = app.model.classes[*index].class.clone();
+            if !app.model.classes.is_empty() {
+                *class = app.model.classes[*index].class.clone();
+            }
             app.selected_title = None;
         }
     }
     if app.follow {
-        let newest_log = app.model.logs.last().unwrap();
-        let class_index = app.model.index_of(&newest_log.class).unwrap();
-        app.selected_class = Some((newest_log.class.clone(), class_index));
-        app.selected_title = Some((
-            newest_log.title.clone(),
-            app.model.classes[class_index]
-                .index_of(&newest_log.title)
-                .unwrap(),
-        ));
+        if now_is_visible(app) {
+            let newest_log = app.model.logs.last().unwrap();
+            let class_index = app.model.index_of(&newest_log.class).unwrap();
+            app.selected_class = Some((newest_log.class.clone(), class_index));
+            app.selected_title = Some((
+                newest_log.title.clone(),
+                app.model.classes[class_index]
+                    .index_of(&newest_log.title)
+                    .unwrap(),
+            ));
+        } else {
+            set_follow(app, false);
+        }
     }
 
     if let Some((class, _)) = &app.selected_class {
@@ -319,8 +331,7 @@ fn event_loop(app: &mut App) -> Result<()> {
                             app.settings.multi_timeline = !app.settings.multi_timeline
                         }
                         KeyCode::Char('f') => {
-                            app.follow = !app.follow;
-                            app.selected_title = None;
+                            set_follow(app, !app.follow);
                         }
                         KeyCode::Up => {
                             if let None = app.selected_class.as_ref() {
@@ -454,4 +465,15 @@ fn footer_line(app: &App) -> Line<'static> {
             Style::default().add_modifier(Modifier::DIM),
         ),
     ])
+}
+
+fn set_follow(app: &mut App, follow: bool) {
+    app.follow = follow;
+    app.selected_title = None;
+}
+
+fn now_is_visible(app: &App) -> bool {
+    app.settings
+        .focused_interval
+        .contains_utc_timestamp_millis(Utc::now().timestamp_millis() as u64)
 }
