@@ -179,14 +179,7 @@ pub fn build_title_table(
 
     let total: u64 = rows.iter().map(|(_, dur, _, _)| *dur).sum();
 
-    let mut max_title_width = rows
-        .iter()
-        .map(|(title, _, _, _)| title.len())
-        .max()
-        .unwrap_or(0);
-
     let max_string_length = terminal_width().saturating_sub(20);
-    max_title_width = max_title_width.min(max_string_length);
     let mut max_duration_width = "Duration".len();
 
     let mut table_rows: Vec<Row<'static>> = Vec::new();

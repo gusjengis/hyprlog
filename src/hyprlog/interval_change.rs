@@ -1,4 +1,4 @@
-use crate::{interval::Interval, log_reader::LogReader, model_building::build_model, tui::App};
+use crate::{log_reader::LogReader, model_building::build_model, tui::App};
 
 pub fn handle_interval_change(app: &mut App) {
     app.model.reset_mappings();

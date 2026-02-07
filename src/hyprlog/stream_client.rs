@@ -20,6 +20,7 @@ pub enum StreamEvent {
     Welcome {
         current_seq: u64,
     },
+    #[allow(dead_code)]
     Gap {
         expected: u64,
         received: u64,
@@ -35,7 +36,6 @@ pub struct StreamClient {
     state: Arc<Mutex<StreamState>>,
     force_render: Arc<AtomicBool>,
     _join_handle: thread::JoinHandle<()>,
-    client_id: Uuid,
 }
 
 impl StreamClient {
@@ -62,7 +62,6 @@ impl StreamClient {
             state,
             force_render,
             _join_handle: join_handle,
-            client_id,
         })
     }
 
@@ -78,10 +77,6 @@ impl StreamClient {
         }
 
         Ok(event)
-    }
-
-    pub fn client_id(&self) -> Uuid {
-        self.client_id
     }
 
     pub fn force_render(&self) -> &Arc<AtomicBool> {

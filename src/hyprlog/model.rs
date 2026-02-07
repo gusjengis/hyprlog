@@ -62,10 +62,6 @@ impl Title {
     fn add_duration(&mut self, duration: u64) {
         self.total_duration += duration;
     }
-
-    fn class<'a>(&self, logs: &'a Vec<Log>) -> &'a String {
-        &logs[*self.logs.first().unwrap()].class
-    }
 }
 
 pub struct Class {
@@ -123,7 +119,7 @@ impl Class {
         self.titles.iter().position(|t| t.title == title)
     }
 
-    pub fn iter_logs<'a>(&'a self, logs: &'a Vec<Log>) -> impl Iterator<Item = &Log> + 'a {
+    pub fn iter_logs<'a>(&'a self, logs: &'a Vec<Log>) -> impl Iterator<Item = &'a Log> + 'a {
         self.logs.iter().map(move |&log_index| &logs[log_index])
     }
 
@@ -257,7 +253,7 @@ impl Model {
         self.classes.iter().position(|c| c.class == class)
     }
 
-    pub fn logs_iter<'a>(&'a self, interval: &'a Interval) -> impl Iterator<Item = &Log> + 'a {
+    pub fn logs_iter<'a>(&'a self, interval: &'a Interval) -> impl Iterator<Item = &'a Log> + 'a {
         self.logs.iter().filter(|log| interval.contains_log(log))
     }
 

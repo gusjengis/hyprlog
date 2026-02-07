@@ -11,7 +11,6 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
-use crate::interval::Interval;
 use crate::interval_change::handle_interval_change;
 use crate::log_reader::LogReader;
 use crate::model::{Log, Model};
