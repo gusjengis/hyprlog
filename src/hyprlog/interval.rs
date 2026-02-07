@@ -75,25 +75,31 @@ impl Interval {
         let original_start = self.start;
         let original_end = self.end;
 
-        let today = Local::now().date_naive();
-        let tonight_midnight = local_midnight_to_utc(today + TimeDelta::days(1));
-        if forward {
-            let desired_shift = TimeDelta::days(days as i64);
-            let potential_end = self.end + desired_shift;
-            if potential_end >= tonight_midnight {
-                let max_shift = tonight_midnight - self.end;
-                self.start = self.start + max_shift;
-                self.end = tonight_midnight;
-            } else {
-                self.start = self.start + desired_shift;
-                self.end = potential_end;
-            }
-        } else {
-            let offset = Days::new(days);
-            self.start = self.start - offset;
-            self.end = self.end - offset;
-        }
+        let start_date = self.start.with_timezone(&Local).date_naive();
+        let end_date = self.end.with_timezone(&Local).date_naive();
+        let span_days = (end_date - start_date).num_days().max(0) as u64;
 
+        let today = Local::now().date_naive();
+        let tonight_midnight_date = today + TimeDelta::days(1);
+
+        let desired_start_date = if forward {
+            start_date + Days::new(days)
+        } else {
+            start_date - Days::new(days)
+        };
+        let desired_end_date = desired_start_date + Days::new(span_days);
+
+        let (next_start_date, next_end_date) =
+            if forward && desired_end_date >= tonight_midnight_date {
+                let capped_end_date = tonight_midnight_date;
+                let capped_start_date = capped_end_date - Days::new(span_days);
+                (capped_start_date, capped_end_date)
+            } else {
+                (desired_start_date, desired_end_date)
+            };
+
+        self.start = local_midnight_to_utc(next_start_date);
+        self.end = local_midnight_to_utc(next_end_date);
         self.changed = self.start != original_start || self.end != original_end;
     }
 
