@@ -182,6 +182,7 @@ fn process_stream_events(app: &mut App) {
 fn update(app: &mut App) {
     if app.settings.focused_interval.changed {
         handle_interval_change(app);
+        app.settings.focused_interval.changed = false;
     }
     if app.needs_full_rebuild {
         app.model = Model::new();
