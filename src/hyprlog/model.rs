@@ -139,6 +139,7 @@ pub struct Model {
     class_map: HashMap<String, usize>,
     pub logs: Vec<Log>,
     pub titles: Vec<(usize, usize)>,
+    pub focused_logs: Vec<usize>,
 }
 
 impl Model {
@@ -148,6 +149,7 @@ impl Model {
             class_map: HashMap::new(),
             logs: Vec::new(),
             titles: Vec::new(),
+            focused_logs: Vec::new(),
         }
     }
 
@@ -193,6 +195,7 @@ impl Model {
         self.logs.push(log);
 
         let log_index = self.logs.len() - 1;
+        self.focused_logs.push(log_index);
 
         self.get_class_mut(class_string)
             .add_log(log_index, title_string, log_duration);
@@ -342,36 +345,26 @@ impl Model {
         self.classes.clear();
         self.class_map.clear();
         self.titles.clear();
+        self.focused_logs.clear();
     }
 
     pub fn map_log(&mut self, log_index: usize) {
+        self.focused_logs.push(log_index);
         let log = &self.logs[log_index];
         let class_string = log.class.clone();
         let title_string = log.title.clone();
-        let mut log_duration = log.duration();
-        if log.end.is_none() {
-            log_duration = 0;
-        }
+        let log_duration = if log.end.is_none() { 0 } else { log.duration() };
 
         self.get_class_mut(class_string)
             .add_log(log_index, title_string, log_duration);
     }
 
     pub fn map_overlap(&mut self, overlap: &Interval) {
-        let mut to_map = Vec::new();
         for i in 0..self.logs.len() {
             let log = &self.logs[i];
             if overlap.contains_log(log) {
-                let class_string = log.class.clone();
-                let title_string = log.title.clone();
-                let log_duration = if log.end.is_none() { 0 } else { log.duration() };
-                to_map.push((i, class_string, title_string, log_duration));
+                self.map_log(i);
             }
-        }
-
-        for (i, class_string, title_string, log_duration) in to_map {
-            self.get_class_mut(class_string)
-                .add_log(i, title_string, log_duration);
         }
     }
 }
