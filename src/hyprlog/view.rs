@@ -1,6 +1,7 @@
 use crate::model::Model;
 use crate::ticks::{overlay_line_with_offset, tick_row};
-use crate::timeline_sections::{timeline, TimelineCharacter};
+use crate::timeline_cache::{TimelineCache, TimelineCacheEntry, TimelineCacheKey, TimelineMode};
+use crate::timeline_sections::{timeline_for_interval, TimelineCharacter};
 use crate::Settings;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -8,7 +9,11 @@ use std::collections::HashMap;
 use std::time::Duration;
 use terminal_size::Width;
 
-pub fn render_log(model: &Model, settings: &Settings) -> Result<Text<'static>, String> {
+pub fn render_log(
+    model: &Model,
+    settings: &Settings,
+    cache: &mut TimelineCache,
+) -> Result<Text<'static>, String> {
     let labels = get_labels(model, settings);
 
     if labels.is_empty() {
@@ -17,12 +22,12 @@ pub fn render_log(model: &Model, settings: &Settings) -> Result<Text<'static>, S
 
     if settings.multi_timeline {
         return Ok(crate::multi_timeline::render_multi_timelines(
-            model, labels, settings,
+            model, labels, settings, cache,
         ));
     }
 
     let colors = key_to_color_map(&labels);
-    let timelines = render_timelines(model, &colors, settings);
+    let timelines = render_timelines(model, &colors, settings, cache);
 
     Ok(timelines)
 }
@@ -73,10 +78,11 @@ pub fn render_timelines(
     model: &Model,
     colors: &HashMap<String, Color>,
     settings: &Settings,
+    cache: &mut TimelineCache,
 ) -> Text<'static> {
     let mut lines = Vec::new();
     lines.push(Line::from(""));
-    lines.push(build_timeline(model, colors, settings, None));
+    lines.push(build_timeline(model, colors, settings, None, cache));
     lines.push(Line::from("\n"));
     return Text::from(lines);
 }
@@ -86,23 +92,46 @@ fn build_timeline(
     colors: &HashMap<String, Color>,
     settings: &Settings,
     label: Option<&String>,
+    cache: &mut TimelineCache,
 ) -> Line<'static> {
     let width = terminal_width();
-    let sections = timeline(model, width, settings, label);
+    if width == 0 {
+        return Line::from("");
+    }
 
-    let ms_per_section = (settings.focused_interval.width() / (width as u64)) as f64;
+    let ms_per_section_u64 = settings.focused_interval.width() / width as u64;
+    if ms_per_section_u64 == 0 {
+        return Line::from("");
+    }
+
+    let start_ms = settings.focused_interval.start.timestamp_millis() as u64;
+    let end_ms = start_ms + ms_per_section_u64 * width as u64;
+    let key = TimelineCacheKey {
+        ms_per_character: ms_per_section_u64,
+        mode: single_mode(settings),
+        label: if settings.class_arg.is_empty() {
+            None
+        } else {
+            Some(settings.class_arg.clone())
+        },
+    };
+
+    let (timeline, section_labels) =
+        materialize_single_timeline(model, settings, cache, &key, start_ms, end_ms, width, label);
+
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut run_text = String::new();
     let mut run_style: Option<Style> = None;
 
-    for section_data in sections.iter() {
-        let key = if settings.multi_timeline {
+    let timeline_chars: Vec<char> = timeline.chars().collect();
+    for (idx, ch) in timeline_chars.iter().enumerate() {
+        let section_label = if settings.multi_timeline {
             label.expect("label required when multi_timeline")
         } else {
-            &section_data.label
+            section_labels.get(idx).map_or("", |s| s.as_str())
         };
 
-        let color = *colors.get(key).unwrap_or(&Color::White);
+        let color = *colors.get(section_label).unwrap_or(&Color::White);
         let (ch, style) = if color == Color::Black {
             (
                 ' ',
@@ -112,7 +141,7 @@ fn build_timeline(
             )
         } else {
             (
-                choose_character(section_data, ms_per_section),
+                *ch,
                 Style::default()
                     .fg(color)
                     .add_modifier(Modifier::CROSSED_OUT),
@@ -139,7 +168,7 @@ fn build_timeline(
     Line::from(spans)
 }
 
-fn choose_character(section_data: &TimelineCharacter, ms_per_section: f64) -> char {
+pub(crate) fn choose_character(section_data: &TimelineCharacter, ms_per_section: f64) -> char {
     let fullness = section_data.total as f64 / ms_per_section as f64;
     if section_data.activity_at_left_edge && section_data.activity_at_right_edge {
         // there is activity near both the left and right side of a section
@@ -179,6 +208,220 @@ fn choose_character(section_data: &TimelineCharacter, ms_per_section: f64) -> ch
             _ => ' ',
         };
     }
+}
+
+fn single_mode(settings: &Settings) -> TimelineMode {
+    match (settings.class_arg.is_empty(), settings.full) {
+        (true, false) => TimelineMode::SingleAll,
+        (true, true) => TimelineMode::SingleAllFull,
+        (false, false) => TimelineMode::SingleClass,
+        (false, true) => TimelineMode::SingleClassFull,
+    }
+}
+
+fn dynamic_column_range(
+    start_ms: u64,
+    width: usize,
+    ms_per_char: u64,
+    has_dynamic: bool,
+) -> (usize, usize) {
+    if !has_dynamic || width == 0 || ms_per_char == 0 {
+        return (0, 0);
+    }
+
+    let end_ms = start_ms + ms_per_char * width as u64;
+    let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+    if now_ms < start_ms || now_ms >= end_ms {
+        return (0, 0);
+    }
+
+    let col = ((now_ms - start_ms) / ms_per_char) as usize;
+    let col_start = col.saturating_sub(1);
+    let col_end = (col + 2).min(width);
+    (col_start, col_end)
+}
+
+fn cacheable_column_ranges(width: usize, dynamic_range: (usize, usize)) -> Vec<(usize, usize)> {
+    let (dyn_start, dyn_end) = dynamic_range;
+    if dyn_end > dyn_start {
+        let mut ranges = Vec::new();
+        if dyn_start > 0 {
+            ranges.push((0, dyn_start));
+        }
+        if dyn_end < width {
+            ranges.push((dyn_end, width));
+        }
+        ranges
+    } else {
+        vec![(0, width)]
+    }
+}
+
+fn single_has_dynamic_open_log(model: &Model, settings: &Settings) -> bool {
+    let Some(last) = model.logs.last() else {
+        return false;
+    };
+    if last.end.is_some() {
+        return false;
+    }
+
+    settings.class_arg.is_empty() || settings.full || last.class == settings.class_arg
+}
+
+fn materialize_single_timeline(
+    model: &Model,
+    settings: &Settings,
+    cache: &mut TimelineCache,
+    key: &TimelineCacheKey,
+    start_ms: u64,
+    end_ms: u64,
+    width: usize,
+    label: Option<&String>,
+) -> (String, Vec<String>) {
+    let ms_per_char = key.ms_per_character;
+    let dynamic_range = dynamic_column_range(
+        start_ms,
+        width,
+        ms_per_char,
+        single_has_dynamic_open_log(model, settings),
+    );
+
+    let mut chars: Vec<Option<char>> = vec![None; width];
+    let mut labels: Vec<Option<String>> = vec![None; width];
+
+    if let Some(entries) = cache.entries_for_key(key) {
+        for entry in entries {
+            let overlap_start = start_ms.max(entry.start_ms);
+            let overlap_end = end_ms.min(entry.end_ms);
+            if overlap_start >= overlap_end {
+                continue;
+            }
+
+            let mut col_start = ((overlap_start - start_ms) / ms_per_char) as usize;
+            let mut col_end = ((overlap_end - start_ms) / ms_per_char) as usize;
+            if col_start >= width {
+                continue;
+            }
+            col_end = col_end.min(width);
+            if col_end <= col_start {
+                continue;
+            }
+
+            let (dyn_start, dyn_end) = dynamic_range;
+            if dyn_end > dyn_start && col_start < dyn_end && col_end > dyn_start {
+                if col_start < dyn_start {
+                    col_end = dyn_start;
+                } else {
+                    col_start = dyn_end;
+                }
+            }
+
+            if col_end <= col_start {
+                continue;
+            }
+
+            let dst_start_ms = start_ms + (col_start as u64) * ms_per_char;
+            if dst_start_ms < entry.start_ms {
+                let advance_cols = (entry.start_ms - dst_start_ms).div_ceil(ms_per_char) as usize;
+                col_start = (col_start + advance_cols).min(width);
+                if col_end <= col_start {
+                    continue;
+                }
+            }
+
+            let src_start = ((start_ms + (col_start as u64) * ms_per_char - entry.start_ms)
+                / ms_per_char) as usize;
+            let entry_chars: Vec<char> = entry.timeline.chars().collect();
+            for i in 0..(col_end - col_start) {
+                let dst = col_start + i;
+                let src = src_start + i;
+                if dst >= width || src >= entry_chars.len() {
+                    break;
+                }
+                if chars[dst].is_none() {
+                    chars[dst] = Some(entry_chars[src]);
+                    labels[dst] = Some(entry.section_labels.get(src).cloned().unwrap_or_default());
+                }
+            }
+        }
+    }
+
+    let mut gap_start: Option<usize> = None;
+    for i in 0..=width {
+        let missing = i < width && chars[i].is_none();
+        if missing {
+            if gap_start.is_none() {
+                gap_start = Some(i);
+            }
+            continue;
+        }
+
+        if let Some(s) = gap_start {
+            let e = i;
+            let seg_width = e - s;
+            if seg_width > 0 {
+                let seg_start_ms = start_ms + (s as u64) * ms_per_char;
+                let seg_end_ms = start_ms + (e as u64) * ms_per_char;
+                let interval = crate::interval::Interval {
+                    start: chrono::DateTime::<chrono::Utc>::from_timestamp_millis(
+                        seg_start_ms as i64,
+                    )
+                    .expect("invalid start timestamp"),
+                    end: chrono::DateTime::<chrono::Utc>::from_timestamp_millis(seg_end_ms as i64)
+                        .expect("invalid end timestamp"),
+                    changed: false,
+                };
+                let sections = timeline_for_interval(model, seg_width, &interval, settings, label);
+
+                let mut seg_chars = Vec::with_capacity(seg_width);
+                let mut seg_labels = Vec::with_capacity(seg_width);
+                for section in &sections {
+                    seg_chars.push(choose_character(section, ms_per_char as f64));
+                    seg_labels.push(section.label.clone());
+                }
+
+                for j in 0..seg_width {
+                    chars[s + j] = Some(seg_chars[j]);
+                    labels[s + j] = Some(seg_labels[j].clone());
+                }
+
+                let local_dynamic_range = (
+                    dynamic_range.0.saturating_sub(s).min(seg_width),
+                    dynamic_range.1.saturating_sub(s).min(seg_width),
+                );
+                for (cache_s, cache_e) in cacheable_column_ranges(seg_width, local_dynamic_range) {
+                    if cache_e <= cache_s {
+                        continue;
+                    }
+                    let mut timeline = String::with_capacity(cache_e - cache_s);
+                    for ch in &seg_chars[cache_s..cache_e] {
+                        timeline.push(*ch);
+                    }
+                    let section_labels = seg_labels[cache_s..cache_e].to_vec();
+
+                    cache.insert(
+                        key.clone(),
+                        TimelineCacheEntry {
+                            start_ms: seg_start_ms + (cache_s as u64) * ms_per_char,
+                            end_ms: seg_start_ms + (cache_e as u64) * ms_per_char,
+                            timeline,
+                            section_labels,
+                        },
+                    );
+                }
+            }
+            gap_start = None;
+        }
+    }
+
+    let mut timeline = String::with_capacity(width);
+    let mut section_labels = Vec::with_capacity(width);
+    for i in 0..width {
+        timeline.push(chars[i].unwrap_or(' '));
+        section_labels.push(labels[i].clone().unwrap_or_default());
+    }
+
+    (timeline, section_labels)
 }
 
 pub fn truncate_string(s: &str, max_len: usize) -> String {

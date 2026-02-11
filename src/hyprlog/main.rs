@@ -10,6 +10,7 @@ mod multi_timeline;
 mod stream_client;
 mod tables;
 mod ticks;
+mod timeline_cache;
 mod timeline_sections;
 mod tui;
 mod view;

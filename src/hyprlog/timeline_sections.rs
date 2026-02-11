@@ -22,14 +22,15 @@ impl Default for TimelineCharacter {
     }
 }
 
-pub fn timeline(
+pub fn timeline_for_interval(
     model: &Model,
     width: usize,
+    interval: &crate::interval::Interval,
     settings: &Settings,
     title: Option<&String>,
 ) -> Vec<TimelineCharacter> {
-    let ms_per_section = (settings.focused_interval.width() / width as u64) as u64;
-    let starting_ms = settings.focused_interval.start.timestamp_millis() as u64;
+    let ms_per_section = (interval.width() / width as u64) as u64;
+    let starting_ms = interval.start.timestamp_millis() as u64;
     let mut sections: Vec<TimelineCharacter> = vec![TimelineCharacter::default(); width];
 
     let mut process_log = |log: &Log| -> bool {
@@ -68,7 +69,7 @@ pub fn timeline(
             }
         }
     } else if settings.class_arg.is_empty() {
-        for log in model.logs_iter(&settings.focused_interval) {
+        for log in model.logs_iter(interval) {
             if process_log(log) {
                 break;
             }

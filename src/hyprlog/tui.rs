@@ -20,6 +20,7 @@ use crate::model::{Log, Model};
 use crate::model_building::{build_model, filter_class};
 use crate::stream_client::{StreamClient, StreamEvent};
 use crate::tables::{build_class_table, build_title_table};
+use crate::timeline_cache::TimelineCache;
 use crate::view::{format_short_duration, header, render_log};
 use crate::Settings;
 
@@ -44,6 +45,7 @@ pub struct App {
     pub(crate) force_render: std::sync::Arc<AtomicBool>,
     pub(crate) timeline_area: Rect,
     pub(crate) drag_state: Option<DragState>,
+    pub(crate) timeline_cache: TimelineCache,
 }
 
 pub(crate) struct DragState {
@@ -81,6 +83,7 @@ impl App {
             force_render,
             timeline_area: Rect::default(),
             drag_state: None,
+            timeline_cache: TimelineCache::new(),
         };
 
         if let Some(ref mut client) = app.stream_client {
@@ -199,6 +202,8 @@ fn process_stream_events(app: &mut App) {
 }
 
 fn update(app: &mut App) {
+    let logs_before = app.model.logs.len();
+
     if app.settings.focused_interval.changed {
         handle_interval_change(app);
         app.settings.focused_interval.changed = false;
@@ -213,10 +218,16 @@ fn update(app: &mut App) {
         .unwrap();
         app.pending_logs.clear();
         app.needs_full_rebuild = false;
+        app.timeline_cache.clear();
     } else if !app.pending_logs.is_empty() {
         for log in app.pending_logs.drain(..) {
             app.model.add_log(log, false);
         }
+        app.timeline_cache.clear();
+    }
+
+    if app.model.logs.len() != logs_before {
+        app.timeline_cache.clear();
     }
 
     if !app.model.logs.is_empty() {
@@ -279,13 +290,14 @@ fn update(app: &mut App) {
 
 fn render(frame: &mut Frame, app: &mut App) {
     let timeline_start = Instant::now();
-    let (timelines_text, center_timeline) = match render_log(&app.model, &app.settings) {
-        Ok(text) => (text, false),
-        Err(message) => {
-            let empty_text: Text<'static> = Text::from(Line::from(message));
-            (empty_text, true)
-        }
-    };
+    let (timelines_text, center_timeline) =
+        match render_log(&app.model, &app.settings, &mut app.timeline_cache) {
+            Ok(text) => (text, false),
+            Err(message) => {
+                let empty_text: Text<'static> = Text::from(Line::from(message));
+                (empty_text, true)
+            }
+        };
     app.timeline_time = timeline_start.elapsed();
 
     let chunks = Layout::default()

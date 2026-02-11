@@ -128,10 +128,6 @@ impl Class {
         self.titles.iter().position(|t| t.title == title)
     }
 
-    pub fn title_index(&self, title: &str) -> Option<usize> {
-        self.title_map.get(title).copied()
-    }
-
     pub fn iter_logs<'a>(&'a self, logs: &'a Vec<Log>) -> impl Iterator<Item = &'a Log> + 'a {
         self.logs.iter().map(move |&log_index| &logs[log_index])
     }
@@ -288,10 +284,6 @@ impl Model {
 
     pub fn index_of(&self, class: &str) -> Option<usize> {
         self.classes.iter().position(|c| c.class == class)
-    }
-
-    pub fn class_index(&self, class: &str) -> Option<usize> {
-        self.class_map.get(class).copied()
     }
 
     pub fn logs_iter<'a>(&'a self, interval: &'a Interval) -> impl Iterator<Item = &'a Log> + 'a {
