@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use chrono::TimeDelta;
 use csv::{Reader, StringRecord};
 use directories::BaseDirs;
+use std::collections::BTreeSet;
 use std::{
     fs::{create_dir_all, File},
     path::PathBuf,
@@ -25,17 +26,26 @@ impl LogReader {
             .join("hyprlog");
 
         create_dir_all(&base_dir).expect("failed to create data directory");
-        // get all files in the interval
-        let start = settings.focused_interval.start.date_naive();
-        let end = settings.focused_interval.end.date_naive();
+        // XOR focused + loaded intervals, then keep only the parts inside focused.
+        let intervals_to_read: Vec<Interval> =
+            interval_xor(&settings.focused_interval, &settings.loaded_interval)
+                .into_iter()
+                .filter_map(|interval| interval.overlap(&settings.focused_interval))
+                .collect();
 
-        let mut files = Vec::new();
-        let mut current = start;
+        let mut files_set = BTreeSet::new();
+        for interval in intervals_to_read {
+            let start = interval.start.date_naive();
+            let end = interval.end.date_naive();
 
-        while current <= end {
-            files.push(base_dir.join(format!("{}.csv", current.format("%Y-%m-%d"))));
-            current += TimeDelta::days(1);
+            let mut current = start;
+            while current <= end {
+                files_set.insert(base_dir.join(format!("{}.csv", current.format("%Y-%m-%d"))));
+                current += TimeDelta::days(1);
+            }
         }
+
+        let mut files: Vec<PathBuf> = files_set.into_iter().collect();
 
         // skip non-existent files
         files = files.into_iter().filter(|p| p.exists()).collect();
@@ -142,6 +152,32 @@ impl LogReader {
 
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
+    }
+}
+
+fn interval_xor(a: &Interval, b: &Interval) -> Vec<Interval> {
+    if let Some(overlap) = a.overlap(b) {
+        let mut intervals = Vec::new();
+
+        if a.start.min(b.start) < overlap.start {
+            intervals.push(Interval {
+                start: a.start.min(b.start),
+                end: overlap.start,
+                changed: false,
+            });
+        }
+
+        if overlap.end < a.end.max(b.end) {
+            intervals.push(Interval {
+                start: overlap.end,
+                end: a.end.max(b.end),
+                changed: false,
+            });
+        }
+
+        intervals
+    } else {
+        vec![a.clone(), b.clone()]
     }
 }
 
