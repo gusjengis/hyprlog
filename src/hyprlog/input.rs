@@ -71,10 +71,10 @@ pub fn event_loop(app: &mut App) -> Result<()> {
                                 }
                             }
                             KeyCode::Left => {
-                                app.settings.focused_interval.pan_days(1, false);
+                                pan_keyboard_columns(app, false, 1);
                             }
                             KeyCode::Right => {
-                                app.settings.focused_interval.pan_days(1, true);
+                                pan_keyboard_columns(app, true, 1);
                             }
                             KeyCode::Char('+') | KeyCode::Char('=') => {
                                 zoom_keyboard(app, true);
@@ -175,6 +175,20 @@ fn zoom_mouse(app: &mut App, column: u16, zoom_in: bool) {
     let anchor =
         interval_anchor_from_column(&app.settings.focused_interval, app.timeline_area, column);
     app.settings.focused_interval.zoom_around(anchor, zoom_in);
+}
+
+fn pan_keyboard_columns(app: &mut App, forward: bool, columns: u16) {
+    let width_ms = app.settings.focused_interval.width();
+    if width_ms == 0 {
+        return;
+    }
+
+    let cols = app.timeline_area.width.max(1) as u64;
+    let ms_per_column = width_ms.div_ceil(cols).max(1);
+    let delta = ms_per_column.saturating_mul(columns as u64) as i64;
+    app.settings
+        .focused_interval
+        .pan_millis(if forward { delta } else { -delta });
 }
 
 fn interval_anchor_from_column(
