@@ -6,6 +6,7 @@ mod interval_change;
 mod log_reader;
 mod model;
 mod model_building;
+mod multi_timeline;
 mod stream_client;
 mod tables;
 mod ticks;

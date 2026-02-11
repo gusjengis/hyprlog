@@ -15,8 +15,14 @@ pub fn render_log(model: &Model, settings: &Settings) -> Result<Text<'static>, S
         return Err("Empty log".to_string());
     }
 
+    if settings.multi_timeline {
+        return Ok(crate::multi_timeline::render_multi_timelines(
+            model, labels, settings,
+        ));
+    }
+
     let colors = key_to_color_map(&labels);
-    let timelines = render_timelines(model, &colors, labels, settings);
+    let timelines = render_timelines(model, &colors, settings);
 
     Ok(timelines)
 }
@@ -66,25 +72,12 @@ pub fn header(settings: &Settings) -> String {
 pub fn render_timelines(
     model: &Model,
     colors: &HashMap<String, Color>,
-    labels: Vec<String>,
     settings: &Settings,
 ) -> Text<'static> {
     let mut lines = Vec::new();
     lines.push(Line::from(""));
-    if !settings.multi_timeline {
-        lines.push(build_timeline(model, colors, settings, None));
-        lines.push(Line::from("\n"));
-    } else {
-        let mut count = 0;
-        for label in labels {
-            if label.len() == 0 {
-                continue;
-            }
-            lines.push(build_timeline(model, colors, settings, Some(&label)));
-            lines.push(Line::from("\n"));
-            count += 1;
-        }
-    }
+    lines.push(build_timeline(model, colors, settings, None));
+    lines.push(Line::from("\n"));
     return Text::from(lines);
 }
 
