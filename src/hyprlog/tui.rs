@@ -487,6 +487,8 @@ fn footer_line(app: &App) -> Line<'static> {
     spans.extend([
         key_span("↑/↓"),
         Span::raw("move  •  "),
+        key_span("+/-"),
+        Span::raw("zoom  •  "),
         key_span("esc"),
         Span::raw("back  •  "),
         Span::styled(

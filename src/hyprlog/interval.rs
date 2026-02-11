@@ -133,6 +133,87 @@ impl Interval {
         self.changed = self.start != original_start || self.end != original_end;
     }
 
+    pub fn zoom_around(&mut self, anchor_ms: u64, zoom_in: bool) {
+        const ZOOM_IN_NUM: i128 = 4;
+        const ZOOM_IN_DEN: i128 = 5;
+        const ZOOM_OUT_NUM: i128 = 5;
+        const ZOOM_OUT_DEN: i128 = 4;
+        const MIN_WIDTH_MS: i128 = 60_000;
+
+        let original_start = self.start;
+        let original_end = self.end;
+
+        let mut start_ms = self.start.timestamp_millis() as i128;
+        let mut end_ms = self.end.timestamp_millis() as i128;
+        if end_ms <= start_ms {
+            return;
+        }
+
+        let mut anchor = anchor_ms as i128;
+        if anchor < start_ms {
+            anchor = start_ms;
+        }
+        if anchor >= end_ms {
+            anchor = end_ms - 1;
+        }
+
+        let old_width = end_ms - start_ms;
+        let (num, den) = if zoom_in {
+            (ZOOM_IN_NUM, ZOOM_IN_DEN)
+        } else {
+            (ZOOM_OUT_NUM, ZOOM_OUT_DEN)
+        };
+
+        let mut new_width = if num >= den {
+            (old_width * num + den - 1) / den
+        } else {
+            old_width * num / den
+        };
+
+        if zoom_in {
+            new_width = new_width.max(MIN_WIDTH_MS);
+            if new_width >= old_width && old_width > MIN_WIDTH_MS {
+                new_width = old_width - 1;
+            }
+        } else if new_width <= old_width {
+            new_width = old_width + 1;
+        }
+
+        let left = anchor - start_ms;
+        let new_left = if old_width > 0 {
+            (new_width * left) / old_width
+        } else {
+            0
+        };
+
+        start_ms = anchor - new_left;
+        end_ms = start_ms + new_width;
+
+        let tonight_midnight = local_midnight_to_utc(Local::now().date_naive() + TimeDelta::days(1))
+            .timestamp_millis() as i128;
+
+        if end_ms > tonight_midnight {
+            let overshoot = end_ms - tonight_midnight;
+            end_ms = tonight_midnight;
+            start_ms -= overshoot;
+        }
+
+        if end_ms <= start_ms {
+            return;
+        }
+
+        let Some(next_start) = DateTime::<Utc>::from_timestamp_millis(start_ms as i64) else {
+            return;
+        };
+        let Some(next_end) = DateTime::<Utc>::from_timestamp_millis(end_ms as i64) else {
+            return;
+        };
+
+        self.start = next_start;
+        self.end = next_end;
+        self.changed = self.start != original_start || self.end != original_end;
+    }
+
     pub fn expand_to_include(&mut self, focused_interval: &Interval) {
         self.start = focused_interval.start.min(self.start);
         self.end = focused_interval.end.max(self.end);

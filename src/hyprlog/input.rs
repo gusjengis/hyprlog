@@ -76,6 +76,12 @@ pub fn event_loop(app: &mut App) -> Result<()> {
                             KeyCode::Right => {
                                 app.settings.focused_interval.pan_days(1, true);
                             }
+                            KeyCode::Char('+') | KeyCode::Char('=') => {
+                                zoom_keyboard(app, true);
+                            }
+                            KeyCode::Char('-') => {
+                                zoom_keyboard(app, false);
+                            }
                             KeyCode::Esc => {
                                 if app.selected_title.is_some() {
                                     app.selected_title = None;
@@ -130,6 +136,16 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
         MouseEventKind::Up(MouseButton::Left) => {
             app.drag_state = None;
         }
+        MouseEventKind::ScrollUp => {
+            if timeline_contains(app.timeline_area, mouse.column, mouse.row) {
+                zoom_mouse(app, mouse.column, true);
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            if timeline_contains(app.timeline_area, mouse.column, mouse.row) {
+                zoom_mouse(app, mouse.column, false);
+            }
+        }
         _ => {}
     }
 }
@@ -139,4 +155,41 @@ fn timeline_contains(area: Rect, column: u16, row: u16) -> bool {
         return false;
     }
     column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height
+}
+
+fn zoom_keyboard(app: &mut App, zoom_in: bool) {
+    let anchor = if app.timeline_area.width > 0 {
+        interval_anchor_from_column(
+            &app.settings.focused_interval,
+            app.timeline_area,
+            app.timeline_area.x + app.timeline_area.width / 2,
+        )
+    } else {
+        app.settings.focused_interval.start.timestamp_millis() as u64
+            + app.settings.focused_interval.width() / 2
+    };
+    app.settings.focused_interval.zoom_around(anchor, zoom_in);
+}
+
+fn zoom_mouse(app: &mut App, column: u16, zoom_in: bool) {
+    let anchor =
+        interval_anchor_from_column(&app.settings.focused_interval, app.timeline_area, column);
+    app.settings.focused_interval.zoom_around(anchor, zoom_in);
+}
+
+fn interval_anchor_from_column(
+    interval: &crate::interval::Interval,
+    area: Rect,
+    column: u16,
+) -> u64 {
+    let start_ms = interval.start.timestamp_millis() as u64;
+    let width_ms = interval.width();
+    if area.width == 0 || width_ms == 0 {
+        return start_ms;
+    }
+
+    let rel_col = column
+        .saturating_sub(area.x)
+        .min(area.width.saturating_sub(1)) as u64;
+    start_ms + (width_ms * rel_col / area.width as u64)
 }
