@@ -90,7 +90,10 @@ fn build_timeline(
     let width = terminal_width();
     let sections = timeline(model, width, settings, label);
 
-    let mut spans: Vec<Span<'static>> = Vec::with_capacity(sections.len());
+    let ms_per_section = (settings.focused_interval.width() / (width as u64)) as f64;
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut run_text = String::new();
+    let mut run_style: Option<Style> = None;
 
     for section_data in sections.iter() {
         let key = if settings.multi_timeline {
@@ -99,40 +102,44 @@ fn build_timeline(
             &section_data.label
         };
 
-        if let Some(color) = colors.get(key) {
-            // Old behavior was effectively:
-            //   STRIKE_ON + (colored glyph) + STRIKE_OFF
-            //
-            // In Ratatui, "strike + color" must be part of the SAME style on the Span.
-            // To match your old look, when FANCY_TIMELINE is enabled we apply CROSSED_OUT
-            // broadly (so the decoration stays colored with the fg).
-            let mut base_style = Style::default().fg(*color);
-            base_style = base_style.add_modifier(Modifier::CROSSED_OUT);
+        let color = *colors.get(key).unwrap_or(&Color::White);
+        let (ch, style) = if color == Color::Black {
+            (
+                ' ',
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD | Modifier::CROSSED_OUT),
+            )
+        } else {
+            (
+                choose_character(section_data, ms_per_section),
+                Style::default()
+                    .fg(color)
+                    .add_modifier(Modifier::CROSSED_OUT),
+            )
+        };
 
-            let (s, style) = if *color == Color::Black {
-                (
-                    " ".to_string(),
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD | Modifier::CROSSED_OUT),
-                )
-            } else {
-                (
-                    choose_character(section_data, settings).to_string(),
-                    base_style,
-                )
-            };
+        if let Some(s) = run_style {
+            if s == style {
+                run_text.push(ch);
+                continue;
+            }
 
-            spans.push(Span::styled(s, style)); // <-- owns the String
+            spans.push(Span::styled(std::mem::take(&mut run_text), s));
         }
+
+        run_style = Some(style);
+        run_text.push(ch);
+    }
+
+    if let Some(s) = run_style {
+        spans.push(Span::styled(run_text, s));
     }
 
     Line::from(spans)
 }
 
-fn choose_character(section_data: &TimelineCharacter, settings: &Settings) -> char {
-    let width = terminal_width();
-    let ms_per_section = (settings.focused_interval.width() / (width as u64)) as f64;
+fn choose_character(section_data: &TimelineCharacter, ms_per_section: f64) -> char {
     let fullness = section_data.total as f64 / ms_per_section as f64;
     if section_data.activity_at_left_edge && section_data.activity_at_right_edge {
         // there is activity near both the left and right side of a section

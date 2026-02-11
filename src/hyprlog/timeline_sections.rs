@@ -22,36 +22,6 @@ impl Default for TimelineCharacter {
     }
 }
 
-fn get_relevant_logs<'a>(
-    model: &'a Model,
-    settings: &'a Settings,
-    title: Option<&'a String>,
-) -> Vec<&'a Log> {
-    if let Some(title_str) = title {
-        if settings.class_arg.is_empty() {
-            if let Some(class) = model.get_class(title_str) {
-                class.iter_logs(&model.logs).collect()
-            } else {
-                Vec::new()
-            }
-        } else if let Some(title_obj) = model.get_title(&settings.class_arg, title_str) {
-            title_obj
-                .logs
-                .iter()
-                .map(|&log_index| &model.logs[log_index])
-                .collect()
-        } else {
-            Vec::new()
-        }
-    } else if settings.class_arg.is_empty() {
-        model.logs_iter(&settings.focused_interval).collect()
-    } else if let Some(class) = model.get_class(&settings.class_arg) {
-        class.iter_logs(&model.logs).collect()
-    } else {
-        Vec::new()
-    }
-}
-
 pub fn timeline(
     model: &Model,
     width: usize,
@@ -62,9 +32,7 @@ pub fn timeline(
     let starting_ms = settings.focused_interval.start.timestamp_millis() as u64;
     let mut sections: Vec<TimelineCharacter> = vec![TimelineCharacter::default(); width];
 
-    let logs = get_relevant_logs(model, settings, title);
-
-    for log in logs {
+    let mut process_log = |log: &Log| -> bool {
         if let Some(end) = log.end {
             assign_interval_to_section(
                 log.start,
@@ -77,8 +45,39 @@ pub fn timeline(
                 title,
                 &mut sections,
             );
+            false
         } else {
-            break;
+            true
+        }
+    };
+
+    if let Some(title_str) = title {
+        if settings.class_arg.is_empty() {
+            if let Some(class) = model.get_class(title_str) {
+                for log in class.iter_logs(&model.logs) {
+                    if process_log(log) {
+                        break;
+                    }
+                }
+            }
+        } else if let Some(title_obj) = model.get_title(&settings.class_arg, title_str) {
+            for &log_index in &title_obj.logs {
+                if process_log(&model.logs[log_index]) {
+                    break;
+                }
+            }
+        }
+    } else if settings.class_arg.is_empty() {
+        for log in model.logs_iter(&settings.focused_interval) {
+            if process_log(log) {
+                break;
+            }
+        }
+    } else if let Some(class) = model.get_class(&settings.class_arg) {
+        for log in class.iter_logs(&model.logs) {
+            if process_log(log) {
+                break;
+            }
         }
     }
 
@@ -113,10 +112,17 @@ fn assign_interval_to_section(
     label: Option<&String>,
     sections: &mut Vec<TimelineCharacter>,
 ) {
-    if settings.multi_timeline && (label.unwrap() == &key(settings, class_name, title))
-        || !settings.multi_timeline
-            && (settings.class_arg == "" || settings.full || &settings.class_arg == class_name)
-    {
+    let should_assign = if settings.multi_timeline {
+        if let Some(line_label) = label {
+            line_label == &key(settings, class_name, title)
+        } else {
+            false
+        }
+    } else {
+        settings.class_arg == "" || settings.full || &settings.class_arg == class_name
+    };
+
+    if should_assign {
         let edge_detection_padding = (ms_per_section as f64 / 10.0) as u64;
         let interval_end = starting_ms + ms_per_section * sections.len() as u64;
         let clamped_start = start.max(starting_ms);
@@ -127,6 +133,17 @@ fn assign_interval_to_section(
         let max_index = sections.len().saturating_sub(1);
         let start_index = section_index(starting_ms, ms_per_section, clamped_start).min(max_index);
         let end_index = section_index(starting_ms, ms_per_section, clamped_end - 1).min(max_index);
+
+        let full_key;
+        let key_ref: &str = if settings.full {
+            full_key = format!("{class_name}: {title}");
+            &full_key
+        } else if settings.class_arg.is_empty() {
+            class_name.as_str()
+        } else {
+            title.as_str()
+        };
+
         for i in start_index..end_index + 1 {
             let section_start = starting_ms + ms_per_section * i as u64;
             let section_end = starting_ms + ms_per_section * (i as u64 + 1);
@@ -138,14 +155,14 @@ fn assign_interval_to_section(
             if section_end - edge_detection_padding <= clamped_end {
                 sections[i].activity_at_right_edge = true;
             }
-            let key = key(settings, class_name, title);
             sections[i].total += contribution;
-            if sections[i].label == key {
+            if sections[i].label == key_ref {
                 sections[i].dominant += contribution;
             } else {
                 sections[i].dominant -= contribution;
                 if sections[i].dominant < 0 {
-                    sections[i].label = key.clone();
+                    sections[i].label.clear();
+                    sections[i].label.push_str(key_ref);
                     sections[i].dominant *= -1;
                 }
             }
