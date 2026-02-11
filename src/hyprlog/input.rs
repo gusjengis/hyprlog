@@ -79,9 +79,12 @@ pub fn event_loop(app: &mut App) -> Result<()> {
                             KeyCode::Esc => {
                                 if app.selected_title.is_some() {
                                     app.selected_title = None;
+                                    app.title_scroll = 0;
                                 } else if app.selected_class.is_some() {
                                     app.selected_class = None;
                                     app.settings.class_arg = String::from("");
+                                    app.class_scroll = 0;
+                                    app.title_scroll = 0;
                                 }
                             }
                             _ => {}

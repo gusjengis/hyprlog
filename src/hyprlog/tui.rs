@@ -29,6 +29,8 @@ pub struct App {
     pub(crate) should_quit: bool,
     pub(crate) selected_class: Option<(String, usize)>,
     pub(crate) selected_title: Option<(String, usize)>,
+    pub(crate) class_scroll: usize,
+    pub(crate) title_scroll: usize,
     pub(crate) follow: bool,
     last_frame_end: Option<Instant>,
     update_time: Duration,
@@ -64,6 +66,8 @@ impl App {
             should_quit: false,
             selected_class: None,
             selected_title: None,
+            class_scroll: 0,
+            title_scroll: 0,
             follow: false,
             last_frame_end: None,
             update_time: Duration::ZERO,
@@ -313,15 +317,63 @@ fn render(frame: &mut Frame, app: &mut App) {
         ])
         .split(chunks[2]);
 
+    // Table layout:
+    // - 1 row for header
+    // - 1 row for bottom border (both tables draw Borders::BOTTOM)
+    // - 1 pinned total row
+    // Everything else is scrollable body.
+    let class_body_capacity = table_cols[0].height.saturating_sub(3) as usize;
+    let title_body_capacity = table_cols[2].height.saturating_sub(3) as usize;
+
+    adjust_scroll(
+        &mut app.class_scroll,
+        app.selected_class.as_ref().map(|(_, idx)| *idx),
+        app.model.classes.len(),
+        class_body_capacity,
+    );
+
+    if app.selected_class.is_none() {
+        app.model.ensure_titles_sorted();
+    }
+
+    let (title_len, title_selected) = match app.selected_class.as_ref() {
+        Some((_, class_idx)) => app
+            .model
+            .classes
+            .get(*class_idx)
+            .map(|c| {
+                (
+                    c.titles.len(),
+                    app.selected_title.as_ref().map(|(_, idx)| *idx),
+                )
+            })
+            .unwrap_or((0, None)),
+        None => (app.model.titles.len(), None),
+    };
+    adjust_scroll(
+        &mut app.title_scroll,
+        title_selected,
+        title_len,
+        title_body_capacity,
+    );
+
     let classes_start = Instant::now();
-    let class_table = build_class_table(&app.model, &app.selected_class, table_cols[0].width);
+    let class_table = build_class_table(
+        &app.model,
+        &app.selected_class,
+        table_cols[0].width,
+        app.class_scroll,
+        class_body_capacity,
+    );
     app.classes_time = classes_start.elapsed();
     let titles_start = Instant::now();
     let title_table = build_title_table(
         &app.model,
         &app.selected_class,
         &app.selected_title,
-        table_cols[0].width,
+        table_cols[2].width,
+        app.title_scroll,
+        title_body_capacity,
     );
     app.titles_time = titles_start.elapsed();
     frame.render_widget(class_table, table_cols[0]);
@@ -329,6 +381,57 @@ fn render(frame: &mut Frame, app: &mut App) {
     frame.render_widget(title_table, table_cols[2]);
 
     frame.render_widget(Paragraph::new(footer_line(app)), chunks[3]);
+}
+
+fn adjust_scroll(scroll: &mut usize, selected: Option<usize>, len: usize, body_capacity: usize) {
+    if len == 0 || body_capacity == 0 {
+        *scroll = 0;
+        return;
+    }
+
+    *scroll = (*scroll).min(len - 1);
+    let Some(sel) = selected.map(|s| s.min(len - 1)) else {
+        return;
+    };
+
+    // Keep `sel` within the real data rows (excluding ellipsis rows).
+    for _ in 0..4 {
+        if sel < *scroll {
+            *scroll = sel;
+            continue;
+        }
+
+        let top_ellipsis = *scroll > 0;
+        let mut slots = body_capacity;
+        if top_ellipsis {
+            if slots == 0 {
+                return;
+            }
+            slots -= 1;
+        }
+
+        let remaining = len.saturating_sub(*scroll);
+        let real = if remaining <= slots {
+            remaining
+        } else if slots == 0 {
+            0
+        } else {
+            // Reserve one slot for the bottom ellipsis row.
+            slots - 1
+        };
+
+        if real == 0 {
+            return;
+        }
+
+        if sel >= *scroll + real {
+            *scroll = sel + 1 - real;
+            *scroll = (*scroll).min(len - 1);
+            continue;
+        }
+
+        break;
+    }
 }
 
 fn draw_inner_border(frame: &mut Frame, area: Rect, style: Style) {

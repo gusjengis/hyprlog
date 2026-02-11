@@ -69,6 +69,7 @@ pub struct Class {
     pub titles: Vec<Title>,
     title_map: HashMap<String, usize>,
     pub logs: Vec<usize>,
+    total_duration: u64,
 }
 
 impl Class {
@@ -78,6 +79,7 @@ impl Class {
             titles: Vec::new(),
             title_map: HashMap::new(),
             logs: Vec::new(),
+            total_duration: 0,
         }
     }
 
@@ -101,7 +103,14 @@ impl Class {
     }
 
     pub fn total_duration(&self, logs: &Vec<Log>) -> u64 {
-        self.titles.iter().map(|t| t.total_duration(logs)).sum()
+        let mut duration = self.total_duration;
+        if let Some(last_index) = self.logs.last() {
+            let last = &logs[*last_index];
+            if last.end.is_none() {
+                duration += last.duration();
+            }
+        }
+        duration
     }
 
     pub fn sort(&mut self, logs: &Vec<Log>) {
@@ -125,8 +134,13 @@ impl Class {
 
     fn add_log(&mut self, log_index: usize, title_string: String, log_duration: u64) {
         self.logs.push(log_index);
+        self.total_duration += log_duration;
         self.get_title_mut(title_string)
             .add_log(log_index, log_duration);
+    }
+
+    fn add_duration(&mut self, duration: u64) {
+        self.total_duration += duration;
     }
 }
 
@@ -135,6 +149,7 @@ pub struct Model {
     class_map: HashMap<String, usize>,
     pub logs: Vec<Log>,
     pub titles: Vec<(usize, usize)>,
+    titles_dirty: bool,
     pub focused_logs: Vec<usize>,
 }
 
@@ -145,6 +160,7 @@ impl Model {
             class_map: HashMap::new(),
             logs: Vec::new(),
             titles: Vec::new(),
+            titles_dirty: true,
             focused_logs: Vec::new(),
         }
     }
@@ -169,18 +185,20 @@ impl Model {
     }
 
     pub fn add_log(&mut self, log: Log, bulk_addition: bool) {
+        self.titles_dirty = true;
         let mut changed_log_indices = vec![];
         if let Some(last_log) = self.logs.last_mut() {
             if last_log.end.is_none() {
                 last_log.end = Some(log.start);
+
+                let class_string = last_log.class.clone();
+                let title_string = last_log.title.clone();
+                let duration = last_log.duration();
+                let class = self.get_class_mut(class_string);
+                class.add_duration(duration);
+                class.get_title_mut(title_string).add_duration(duration);
+                changed_log_indices.push(self.logs.len() - 1);
             }
-            let class_string = last_log.class.clone();
-            let title_string = last_log.title.clone();
-            let duration = last_log.duration();
-            self.get_class_mut(class_string)
-                .get_title_mut(title_string)
-                .add_duration(duration);
-            changed_log_indices.push(self.logs.len() - 1);
         }
         let class_string = log.class.clone();
         let title_string = log.title.clone();
@@ -220,6 +238,21 @@ impl Model {
                 .total_duration(&self.logs)
                 .cmp(&self.classes[b.0].titles[b.1].total_duration(&self.logs))
         });
+
+        self.titles_dirty = false;
+    }
+
+    pub fn ensure_titles_sorted(&mut self) {
+        if !self.titles_dirty {
+            return;
+        }
+        self.build_titles();
+        self.titles.sort_by(|b, a| {
+            self.classes[a.0].titles[a.1]
+                .total_duration(&self.logs)
+                .cmp(&self.classes[b.0].titles[b.1].total_duration(&self.logs))
+        });
+        self.titles_dirty = false;
     }
 
     fn build_titles(&mut self) {
@@ -267,6 +300,10 @@ impl Model {
 
     pub fn maintain_order(&mut self, changed_log_indices: Vec<usize>) {
         use std::collections::HashSet;
+
+        // Ordering can change over time (e.g. a currently-open log duration increases), so treat
+        // the global titles index as stale whenever we attempt to maintain ordering.
+        self.titles_dirty = true;
 
         let mut changed_class_indices: HashSet<usize> = HashSet::new();
         for &log_idx in &changed_log_indices {
@@ -341,10 +378,12 @@ impl Model {
         self.classes.clear();
         self.class_map.clear();
         self.titles.clear();
+        self.titles_dirty = true;
         self.focused_logs.clear();
     }
 
     pub fn map_log(&mut self, log_index: usize) {
+        self.titles_dirty = true;
         self.focused_logs.push(log_index);
         let log = &self.logs[log_index];
         let class_string = log.class.clone();

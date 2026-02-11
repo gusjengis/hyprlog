@@ -21,13 +21,8 @@ fn name_cell(name: &str, style: Style, max_string_length: usize) -> Cell<'static
     Cell::from(truncate_string(name, max_string_length)).style(style)
 }
 
-fn duration_cell(duration: u64, style: Style, max_duration_width: &mut usize) -> Cell<'static> {
-    let duration_string = format_duration(duration);
-    if duration_string.len() > *max_duration_width {
-        *max_duration_width = duration_string.len();
-    }
-
-    Cell::from(duration_string).style(style)
+fn duration_cell(duration: u64, style: Style) -> Cell<'static> {
+    Cell::from(format_duration(duration)).style(style)
 }
 
 fn percent_cell(percent: f64, style: Style) -> Cell<'static> {
@@ -43,30 +38,76 @@ fn total_row(max_string_length: usize, total_duration: u64, total_percentage: f6
         Cell::from(format!("{:>7.2}%", total_percentage))
             .style(Style::default().add_modifier(Modifier::BOLD)),
     ])
-    .top_margin(1)
 }
 
 fn table_widths(width: u16, max_duration_width: usize) -> [Constraint; 3] {
+    let name_width = width.saturating_sub((max_duration_width + 9) as u16);
     [
-        Constraint::Length(width as u16 - (max_duration_width + 9) as u16),
+        Constraint::Length(name_width),
         Constraint::Length(max_duration_width as u16),
         Constraint::Length(9),
     ]
+}
+
+fn ellipsis_row(max_string_length: usize) -> Row<'static> {
+    Row::new(vec![
+        Cell::from(truncate_string("...", max_string_length))
+            .style(Style::default().add_modifier(Modifier::DIM)),
+        Cell::from(" ".to_string()).style(Style::default().add_modifier(Modifier::DIM)),
+        Cell::from(" ".to_string()).style(Style::default().add_modifier(Modifier::DIM)),
+    ])
+}
+
+fn blank_row() -> Row<'static> {
+    Row::new(vec![
+        Cell::from("".to_string()),
+        Cell::from("".to_string()),
+        Cell::from("".to_string()),
+    ])
+}
+
+fn window_counts(scroll: usize, body_capacity: usize, len: usize) -> (bool, bool, usize) {
+    if len == 0 || body_capacity == 0 {
+        return (false, false, 0);
+    }
+
+    let top_ellipsis = scroll > 0;
+    let mut slots = body_capacity;
+    if top_ellipsis {
+        if slots == 0 {
+            return (true, false, 0);
+        }
+        slots -= 1;
+    }
+
+    let remaining = len.saturating_sub(scroll);
+    if remaining <= slots {
+        (top_ellipsis, false, remaining)
+    } else {
+        if slots == 0 {
+            (top_ellipsis, true, 0)
+        } else {
+            // Reserve one slot for the bottom ellipsis row.
+            (top_ellipsis, true, slots - 1)
+        }
+    }
 }
 
 pub fn build_class_table(
     model: &Model,
     selected_class: &Option<(String, usize)>,
     width: u16,
+    scroll: usize,
+    body_capacity: usize,
 ) -> Table<'static> {
-    let rows: Vec<(&str, u64, usize)> = model
+    let len = model.classes.len();
+    let scroll = if len == 0 { 0 } else { scroll.min(len - 1) };
+
+    let total: u64 = model
         .classes
         .iter()
-        .enumerate()
-        .map(|(i, c)| (c.class.as_str(), c.total_duration(&model.logs), i))
-        .collect();
-
-    let total: u64 = rows.iter().map(|(_, dur, _)| *dur).sum();
+        .map(|c| c.total_duration(&model.logs))
+        .sum();
 
     // let mut max_class_width = rows
     //     .iter()
@@ -76,52 +117,52 @@ pub fn build_class_table(
 
     // Cap by terminal width so it doesn't explode.
     let max_string_length = terminal_width().saturating_sub(20);
-    let mut max_duration_width = "Duration".len();
+    let max_duration_width = std::cmp::max("Duration".len(), format_duration(total).len());
     // max_class_width = max_class_width.min(max_string_length);
 
     let mut table_rows: Vec<Row<'static>> = Vec::new();
-    let mut total_percentage = 0.0;
-    let mut total_duration: u64 = 0;
+    let (top_ellipsis, bottom_ellipsis, real_count) = window_counts(scroll, body_capacity, len);
+    if top_ellipsis {
+        table_rows.push(ellipsis_row(max_string_length));
+    }
 
-    for (count, (class, duration, class_index)) in rows.iter().enumerate() {
-        let _ = count; // (remove if unused later)
-        total_duration += *duration;
-
-        let percent = percent_of(*duration, total);
-        total_percentage += percent;
+    for class_index in scroll..(scroll + real_count) {
+        let class = &model.classes[class_index];
+        let duration = class.total_duration(&model.logs);
+        let percent = percent_of(duration, total);
 
         let is_selected = selected_class
             .as_ref()
-            .map(|(name, idx)| *idx == *class_index && name == class)
+            .map(|(name, idx)| *idx == class_index && name == &class.class)
             .unwrap_or(false);
 
         let class_has_selection = selected_class.is_some();
 
         let mut class_style = Style::default();
         if !class_has_selection {
-            class_style = class_style.fg(color_from_index(*class_index));
+            class_style = class_style.fg(color_from_index(class_index));
         }
         if is_selected {
             class_style = class_style.add_modifier(Modifier::REVERSED);
         }
 
-        let class_cell = name_cell(class, class_style, max_string_length);
+        let class_cell = name_cell(class.class.as_str(), class_style, max_string_length);
 
         let dur_cell = {
             let mut s = Style::default();
             if !class_has_selection {
-                s = s.fg(color_from_index(*class_index));
+                s = s.fg(color_from_index(class_index));
             }
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
             }
-            duration_cell(*duration, s, &mut max_duration_width)
+            duration_cell(duration, s)
         };
 
         let pct_cell = {
             let mut s = Style::default();
             if !class_has_selection {
-                s = s.fg(color_from_index(*class_index));
+                s = s.fg(color_from_index(class_index));
             }
             if is_selected {
                 s = s.add_modifier(Modifier::REVERSED);
@@ -132,11 +173,17 @@ pub fn build_class_table(
         table_rows.push(Row::new(vec![class_cell, dur_cell, pct_cell]));
     }
 
-    table_rows.push(total_row(
-        max_string_length,
-        total_duration,
-        total_percentage,
-    ));
+    if bottom_ellipsis {
+        table_rows.push(ellipsis_row(max_string_length));
+    }
+
+    // Pad so the pinned total row lands at the bottom.
+    while table_rows.len() < body_capacity {
+        table_rows.push(blank_row());
+    }
+
+    let total_percentage = if total == 0 { 0.0 } else { 100.0 };
+    table_rows.push(total_row(max_string_length, total, total_percentage));
 
     let widths = table_widths(width, max_duration_width);
 
@@ -154,123 +201,111 @@ pub fn build_title_table(
     selected_class: &Option<(String, usize)>,
     selected_title: &Option<(String, usize)>,
     width: u16,
+    scroll: usize,
+    body_capacity: usize,
 ) -> Table<'static> {
     let class_opt: Option<&Class> = selected_class
         .as_ref()
         .and_then(|(_name, idx)| model.classes.get(*idx));
 
-    let mut rows: Vec<(&str, u64, usize, usize)> = match class_opt {
-        Some(class) => class
-            .titles
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (t.title.as_str(), t.total_duration(&model.logs), i, 0))
-            .collect(),
+    let len = match class_opt {
+        Some(class) => class.titles.len(),
+        None => model.titles.len(),
+    };
+    let scroll = if len == 0 { 0 } else { scroll.min(len - 1) };
+
+    let total: u64 = match class_opt {
+        Some(class) => class.total_duration(&model.logs),
         None => model
             .classes
             .iter()
-            .enumerate()
-            .flat_map(|(class_idx, class)| {
-                class
-                    .titles
-                    .iter()
-                    .enumerate()
-                    .map(move |(title_idx, title)| {
-                        (
-                            title.title.as_str(),
-                            title.total_duration(&model.logs),
-                            title_idx,
-                            class_idx,
-                        )
-                    })
-            })
-            .collect(),
-        // None => model
-        //     .titles
-        //     .iter()
-        //     .map(|(class_idx, title_idx)| {
-        //         (
-        //             model.classes[*class_idx].titles[*title_idx].title.as_str(),
-        //             model.classes[*class_idx].titles[*title_idx].total_duration(&model.logs),
-        //             *title_idx,
-        //             *class_idx,
-        //         )
-        //     })
-        //     .collect(),
+            .map(|c| c.total_duration(&model.logs))
+            .sum(),
     };
 
-    rows.sort_by(|a, b| b.1.cmp(&a.1));
-    // let rows = rows.into_iter().take(CUTOFF).collect::<Vec<_>>();
-
-    let total: u64 = rows.iter().map(|(_, dur, _, _)| *dur).sum();
-
     let max_string_length = terminal_width().saturating_sub(20);
-    let mut max_duration_width = "Duration".len();
+    let max_duration_width = std::cmp::max("Duration".len(), format_duration(total).len());
 
     let mut table_rows: Vec<Row<'static>> = Vec::new();
-    let mut total_percentage = 0.0;
-    let mut total_duration: u64 = 0;
-
-    for (title, duration, title_index, class_index) in rows.iter() {
-        total_duration += *duration;
-
-        let percent = percent_of(*duration, total);
-        total_percentage += percent;
-
-        // Selection styling (title selection is within the selected class)
-        let is_selected = selected_title
-            .as_ref()
-            .map(|(name, idx)| *idx == *title_index && name == title)
-            .unwrap_or(false);
-
-        let class_has_selection = selected_class.is_some();
-
-        let mut title_style = Style::default();
-        if class_has_selection {
-            title_style = title_style.fg(color_from_index(*title_index));
-        } else {
-            title_style = title_style.fg(color_from_index(*class_index));
-        }
-        if is_selected {
-            title_style = title_style.add_modifier(Modifier::REVERSED);
-        }
-
-        let title_cell = name_cell(title, title_style, max_string_length);
-
-        let dur_cell = {
-            let mut s = Style::default();
-            if class_has_selection {
-                s = s.fg(color_from_index(*title_index));
-            } else {
-                title_style = title_style.fg(color_from_index(*class_index));
-            }
-            if is_selected {
-                s = s.add_modifier(Modifier::REVERSED);
-            }
-            duration_cell(*duration, s, &mut max_duration_width)
-        };
-
-        let pct_cell = {
-            let mut s = Style::default();
-            if class_has_selection {
-                s = s.fg(color_from_index(*title_index));
-            } else {
-                title_style = title_style.fg(color_from_index(*class_index));
-            }
-            if is_selected {
-                s = s.add_modifier(Modifier::REVERSED);
-            }
-            percent_cell(percent, s)
-        };
-
-        table_rows.push(Row::new(vec![title_cell, dur_cell, pct_cell]));
+    let (top_ellipsis, bottom_ellipsis, real_count) = window_counts(scroll, body_capacity, len);
+    if top_ellipsis {
+        table_rows.push(ellipsis_row(max_string_length));
     }
 
-    table_rows.push(total_row(
-        max_string_length,
-        total_duration,
-        total_percentage,
-    ));
+    match class_opt {
+        Some(class) => {
+            for title_index in scroll..(scroll + real_count) {
+                let title = &class.titles[title_index];
+                let duration = title.total_duration(&model.logs);
+                let percent = percent_of(duration, total);
+
+                let is_selected = selected_title
+                    .as_ref()
+                    .map(|(name, idx)| *idx == title_index && name == &title.title)
+                    .unwrap_or(false);
+
+                let mut title_style = Style::default().fg(color_from_index(title_index));
+                if is_selected {
+                    title_style = title_style.add_modifier(Modifier::REVERSED);
+                }
+
+                let title_cell = name_cell(title.title.as_str(), title_style, max_string_length);
+
+                let dur_cell = {
+                    let mut s = Style::default().fg(color_from_index(title_index));
+                    if is_selected {
+                        s = s.add_modifier(Modifier::REVERSED);
+                    }
+                    duration_cell(duration, s)
+                };
+
+                let pct_cell = {
+                    let mut s = Style::default().fg(color_from_index(title_index));
+                    if is_selected {
+                        s = s.add_modifier(Modifier::REVERSED);
+                    }
+                    percent_cell(percent, s)
+                };
+
+                table_rows.push(Row::new(vec![title_cell, dur_cell, pct_cell]));
+            }
+        }
+        None => {
+            for i in scroll..(scroll + real_count) {
+                let (class_index, title_index) = model.titles[i];
+                let title = &model.classes[class_index].titles[title_index];
+                let duration = title.total_duration(&model.logs);
+                let percent = percent_of(duration, total);
+
+                let title_style = Style::default().fg(color_from_index(class_index));
+                let title_cell = name_cell(title.title.as_str(), title_style, max_string_length);
+
+                let dur_cell = {
+                    let s = Style::default().fg(color_from_index(class_index));
+                    duration_cell(duration, s)
+                };
+
+                let pct_cell = {
+                    let s = Style::default().fg(color_from_index(class_index));
+                    percent_cell(percent, s)
+                };
+
+                table_rows.push(Row::new(vec![title_cell, dur_cell, pct_cell]));
+            }
+        }
+    }
+
+    if bottom_ellipsis {
+        table_rows.push(ellipsis_row(max_string_length));
+    }
+
+    // Pad so the pinned total row lands at the bottom.
+    while table_rows.len() < body_capacity {
+        table_rows.push(blank_row());
+    }
+
+    let total_percentage = if total == 0 { 0.0 } else { 100.0 };
+    table_rows.push(total_row(max_string_length, total, total_percentage));
 
     let widths = table_widths(width, max_duration_width);
 
