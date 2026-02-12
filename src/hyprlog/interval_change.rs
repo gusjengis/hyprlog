@@ -1,8 +1,6 @@
 use crate::{log_reader::LogReader, model_building::build_model, tui::App};
 
 pub fn handle_interval_change(app: &mut App) {
-    app.model.reset_mappings();
-
     let focused_interval = &app.settings.focused_interval;
     let has_interval_loaded = app
         .settings
@@ -19,8 +17,5 @@ pub fn handle_interval_change(app: &mut App) {
             .expand_to_include(&app.settings.focused_interval);
     }
 
-    if let Some(overlap) = app.settings.loaded_interval.overlap(focused_interval) {
-        app.model.map_overlap(&overlap);
-    }
-    app.model.sort();
+    app.model.reconcile_visible_for_interval(focused_interval);
 }

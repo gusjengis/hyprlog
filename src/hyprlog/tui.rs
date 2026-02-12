@@ -133,6 +133,8 @@ pub fn start_tui(settings: Settings) -> Result<()> {
 
     if !reader.is_empty() {
         build_model(&mut app.model, &mut reader, &app.settings).unwrap();
+        app.model
+            .mark_visible_bounds_initialized(&app.settings.focused_interval);
     }
 
     let _ = update(&mut app);
@@ -216,12 +218,15 @@ fn update(app: &mut App) {
             &app.settings,
         )
         .unwrap();
+        app.model
+            .mark_visible_bounds_initialized(&app.settings.focused_interval);
         app.pending_logs.clear();
         app.needs_full_rebuild = false;
         app.timeline_cache.clear();
     } else if !app.pending_logs.is_empty() {
         for log in app.pending_logs.drain(..) {
-            app.model.add_log(log, false);
+            app.model
+                .add_log(log, false, &app.settings.focused_interval);
         }
         app.timeline_cache.clear();
     }

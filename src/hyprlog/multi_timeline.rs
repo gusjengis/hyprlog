@@ -89,6 +89,12 @@ fn materialize_multi_timeline(
     let ms_per_char = key.ms_per_character;
     let dynamic_range = dynamic_column_range(start_ms, width, ms_per_char, has_dynamic);
 
+    if dynamic_range.1 <= dynamic_range.0 {
+        if let Some(entry) = cache.exact_entry(key, start_ms, end_ms) {
+            return entry.timeline.clone();
+        }
+    }
+
     let mut chars: Vec<Option<char>> = vec![None; width];
 
     if let Some(entries) = cache.entries_for_key(key) {

@@ -286,6 +286,12 @@ fn materialize_single_timeline(
         single_has_dynamic_open_log(model, settings),
     );
 
+    if dynamic_range.1 <= dynamic_range.0 {
+        if let Some(entry) = cache.exact_entry(key, start_ms, end_ms) {
+            return (entry.timeline.clone(), entry.section_labels.clone());
+        }
+    }
+
     let mut chars: Vec<Option<char>> = vec![None; width];
     let mut labels: Vec<Option<String>> = vec![None; width];
 
