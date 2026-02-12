@@ -211,11 +211,9 @@ pub(crate) fn choose_character(section_data: &TimelineCharacter, ms_per_section:
 }
 
 fn single_mode(settings: &Settings) -> TimelineMode {
-    match (settings.class_arg.is_empty(), settings.full) {
-        (true, false) => TimelineMode::SingleAll,
-        (true, true) => TimelineMode::SingleAllFull,
-        (false, false) => TimelineMode::SingleClass,
-        (false, true) => TimelineMode::SingleClassFull,
+    match settings.class_arg.is_empty() {
+        true => TimelineMode::SingleAll,
+        false => TimelineMode::SingleClass,
     }
 }
 
@@ -265,7 +263,7 @@ fn single_has_dynamic_open_log(model: &Model, settings: &Settings) -> bool {
         return false;
     }
 
-    settings.class_arg.is_empty() || settings.full || last.class == settings.class_arg
+    settings.class_arg.is_empty() || last.class == settings.class_arg
 }
 
 fn materialize_single_timeline(
@@ -531,14 +529,7 @@ fn key_to_color_map(list: &Vec<String>) -> HashMap<String, Color> {
 pub fn get_labels(model: &Model, settings: &Settings) -> Vec<String> {
     let mut labels: Vec<String> = Vec::new();
 
-    if settings.full {
-        for class in &model.classes {
-            for title in &class.titles {
-                let label = format!("{}: {}", class.class, title.title);
-                labels.push(label);
-            }
-        }
-    } else if settings.class_arg == "" {
+    if settings.class_arg == "" {
         for class in &model.classes {
             labels.push(class.class.clone());
         }

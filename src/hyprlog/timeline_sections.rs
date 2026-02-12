@@ -120,7 +120,7 @@ fn assign_interval_to_section(
             false
         }
     } else {
-        settings.class_arg == "" || settings.full || &settings.class_arg == class_name
+        settings.class_arg == "" || &settings.class_arg == class_name
     };
 
     if should_assign {
@@ -135,11 +135,7 @@ fn assign_interval_to_section(
         let start_index = section_index(starting_ms, ms_per_section, clamped_start).min(max_index);
         let end_index = section_index(starting_ms, ms_per_section, clamped_end - 1).min(max_index);
 
-        let full_key;
-        let key_ref: &str = if settings.full {
-            full_key = format!("{class_name}: {title}");
-            &full_key
-        } else if settings.class_arg.is_empty() {
+        let key_ref: &str = if settings.class_arg.is_empty() {
             class_name.as_str()
         } else {
             title.as_str()
@@ -176,9 +172,7 @@ fn section_index(starting_ms: u64, ms_per_section: u64, timestamp: u64) -> usize
 }
 
 fn key(settings: &Settings, last_class: &String, last_title: &String) -> String {
-    if settings.full {
-        format!("{last_class}: {last_title}")
-    } else if settings.class_arg == "" {
+    if settings.class_arg == "" {
         last_class.clone()
     } else {
         last_title.clone()

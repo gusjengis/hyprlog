@@ -7,9 +7,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
 fn multi_mode(settings: &Settings) -> TimelineMode {
-    if settings.full {
-        TimelineMode::MultiFull
-    } else if settings.class_arg.is_empty() {
+    if settings.class_arg.is_empty() {
         TimelineMode::MultiClass
     } else {
         TimelineMode::MultiTitle

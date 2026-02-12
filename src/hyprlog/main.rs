@@ -22,8 +22,6 @@ use std::env;
 use crate::{config::Config, interval::Interval, tui::start_tui};
 
 fn main() {
-    // use chrono::Utc;
-    // let start = Utc::now().timestamp_millis();
     let args: Vec<String> = env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("--idle") => send_command("idle"),
@@ -32,12 +30,10 @@ fn main() {
             print_usage();
         }
         None => {
-            // view::render_log(&Settings::new());
             start_tui(Settings::new()).unwrap();
         }
         _ => {
             let mut settings = Settings::new();
-            // Are we waiting on values for these args?
             let mut class = false;
             let mut days = false;
             for arg in args.iter().skip(1) {
@@ -66,9 +62,6 @@ fn main() {
                         "--days" | "-d" => {
                             days = true;
                         }
-                        "--full" | "-f" => {
-                            settings.full = true;
-                        }
                         "--multi" | "-m" => {
                             settings.multi_timeline = true;
                         }
@@ -91,20 +84,15 @@ fn main() {
                 return;
             }
 
-            // render_log(&settings);
             start_tui(settings).unwrap();
         }
     }
-
-    // let end = Utc::now().timestamp_millis();
-    // println!("Runtime: {}ms", end - start)
 }
 
 fn print_usage() {
     println!(
         "Usage: hyprlog\n
         [ --help | -h ]\n
-        [ --full | -f ]\n
         [ --multi | -m ]\n
         [ --days DAY_COUNT | -d DAY_COUNT ]\n
         [ --class CLASS_NAME | -c CLASS_NAME ]\n
@@ -113,7 +101,6 @@ fn print_usage() {
 }
 
 pub struct Settings {
-    pub full: bool,
     pub multi_timeline: bool,
     pub class_arg: String,
     pub loaded_interval: Interval,
@@ -124,7 +111,6 @@ pub struct Settings {
 impl Settings {
     fn new() -> Self {
         Self {
-            full: false,
             multi_timeline: false,
             class_arg: String::from(""),
             loaded_interval: Interval {
