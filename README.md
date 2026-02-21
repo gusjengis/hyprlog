@@ -1,4 +1,6 @@
 # hyprlog
+If you're coming form my resume, my description is of the "tui" branch of this repo, after some final optimizations it will be merged and released. 
+
 This is an activity/focus logger for hyprland.
 
 This is achieved by using the hyprlogd daemon to record all focus events in a log.  
