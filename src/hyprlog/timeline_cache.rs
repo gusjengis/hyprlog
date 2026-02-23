@@ -5,12 +5,9 @@ const MAX_ENTRIES_PER_KEY: usize = 64;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TimelineMode {
     SingleAll,
-    SingleAllFull,
     SingleClass,
-    SingleClassFull,
     MultiClass,
     MultiTitle,
-    MultiFull,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

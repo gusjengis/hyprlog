@@ -68,7 +68,6 @@ fn multi_label_has_dynamic_open_log(
     match mode {
         TimelineMode::MultiClass => last.class == label,
         TimelineMode::MultiTitle => last.class == settings.class_arg && last.title == label,
-        TimelineMode::MultiFull => format!("{}: {}", last.class, last.title) == label,
         _ => false,
     }
 }
