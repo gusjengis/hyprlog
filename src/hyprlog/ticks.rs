@@ -61,7 +61,6 @@ pub fn overlay_line_with_offset(base: &str, overlay: &str, offset: usize) -> Str
 }
 
 fn select_tick_scale(scale_ms: u64) -> TickScale {
-    const HOUR_MS: u64 = 3_600_000;
     const DAY_MS: u64 = 86_400_000;
 
     if scale_ms <= DAY_MS * 2 {
