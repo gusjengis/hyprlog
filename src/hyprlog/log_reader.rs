@@ -126,11 +126,15 @@ impl LogReader {
             let mut rec = StringRecord::new();
             match rdr.read_record(&mut rec) {
                 Ok(true) => {
-                    if self
-                        .interval
-                        .contains_utc_timestamp_millis(rec[0].parse::<u64>().unwrap())
-                    {
-                        return Some(Ok(rec));
+                    let rec = sanitize_record(&rec);
+                    let timestamp = rec.get(0).and_then(|field| field.parse::<u64>().ok());
+
+                    if let Some(timestamp) = timestamp {
+                        if self.interval.contains_utc_timestamp_millis(timestamp) {
+                            return Some(Ok(rec));
+                        } else {
+                            continue;
+                        }
                     } else {
                         continue;
                     }
@@ -153,6 +157,15 @@ impl LogReader {
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
     }
+}
+
+fn sanitize_record(record: &StringRecord) -> StringRecord {
+    StringRecord::from(
+        record
+            .iter()
+            .map(|field| field.chars().filter(|&ch| ch != '\0').collect::<String>())
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn interval_xor(a: &Interval, b: &Interval) -> Vec<Interval> {
@@ -186,5 +199,26 @@ impl Iterator for LogReader {
     type Item = Result<StringRecord>;
     fn next(&mut self) -> Option<Self::Item> {
         self.next_record()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_record;
+    use csv::StringRecord;
+
+    #[test]
+    fn strips_nuls_from_all_fields() {
+        let record = StringRecord::from(vec![
+            "\01773280161088",
+            "SYST\0EM",
+            "bo\0ot",
+        ]);
+
+        let sanitized = sanitize_record(&record);
+
+        assert_eq!(sanitized.get(0), Some("1773280161088"));
+        assert_eq!(sanitized.get(1), Some("SYSTEM"));
+        assert_eq!(sanitized.get(2), Some("boot"));
     }
 }
